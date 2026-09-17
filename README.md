@@ -64,7 +64,7 @@ For Vayun-style wikis with both `index.md` and a `wiki/` directory, jev-lint sca
 
 ## Cost and caching
 
-TypeSafe Jev input is priced at $0.042 per million input tokens. `--dry-run` estimates token count from the serialized questions and makes no network request. The preflight budget considers only cache misses. Successful responses are cached by a hash of the model, state, and question, so unchanged reruns avoid repeat calls.
+TypeSafe Jev input is priced at $0.042 per million input tokens. `--dry-run` makes a conservative token estimate from the serialized questions and makes no network request. The preflight budget considers only cache misses. Successful responses are cached by a hash of the model, state, and question, so unchanged reruns avoid repeat calls.
 
 The output cost is calculated from input-token usage returned by the API. It is an estimate, not an invoice.
 

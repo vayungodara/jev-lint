@@ -299,7 +299,10 @@ def estimate_cost(questions: list[Question]) -> tuple[int, float]:
     if not questions:
         return 0, 0.0
     chars = sum(len(json.dumps({"state": q.state, "question": q.spec})) for q in questions)
-    tokens = max(1, chars // 4)
+    # Jev's request framing adds substantial input beyond the serialized state.
+    # This deliberately overestimated ratio kept the release preflight above
+    # measured usage, so the budget is a cap rather than an optimistic guess.
+    tokens = max(1, chars * 2 // 3)
     return tokens, tokens * PRICE_PER_INPUT_TOKEN
 
 
