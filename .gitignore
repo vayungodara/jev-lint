@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+report.html
+.jev-lint-cache/
+*-run*.json
+*.png
+.playwright-cli/
+.wrangler/

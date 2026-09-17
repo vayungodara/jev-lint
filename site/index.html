@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="jev-lint finds contradictions, stale claims, unresolved markers, and missing pages in Markdown knowledge bases.">
+  <meta name="theme-color" content="#efe7d8">
+  <title>jev-lint — semantic linting for your second brain</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,500;6..72,650&display=swap" rel="stylesheet">
+  <style>
+    :root{--paper:#efe7d8;--sheet:#f7f1e6;--ink:#20231f;--muted:#5c5e56;--rule:#bbb3a5;--red:#a83d29;--shadow:0 24px 60px rgba(44,38,29,.14)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font:500 19px/1.55 Newsreader,Georgia,serif}::selection{background:var(--red);color:#fff}a{color:inherit;text-underline-offset:4px;text-decoration-thickness:1px}a:focus-visible{outline:3px solid var(--red);outline-offset:4px}.mono,code,pre,.meta,.button{font-family:"IBM Plex Mono",monospace}.wrap{width:min(1180px,calc(100% - 40px));margin:auto}.hero{min-height:760px;background:linear-gradient(rgba(247,241,230,.78),rgba(247,241,230,.92)),url("paper.webp") center/cover;display:grid;align-items:center;border-bottom:1px solid var(--rule);position:relative;overflow:hidden}.nav{position:absolute;top:28px;left:20px;right:20px;display:flex;justify-content:space-between;align-items:center;font:500 14px "IBM Plex Mono",monospace}.nav a{text-decoration:none}.nav-links{display:flex;gap:24px}.hero-copy{padding:130px 0 90px;max-width:940px}.hero h1{font-size:clamp(4.4rem,13vw,10rem);line-height:.72;letter-spacing:-.04em;margin:0 0 38px;font-weight:650}.hero h1 span{display:block;font-size:.27em;line-height:1.05;letter-spacing:-.02em;margin:32px 0 0;max-width:18ch}.lede{max-width:57ch;color:var(--muted);font-size:1.25rem}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:34px}.button{font-size:14px;display:inline-block;padding:13px 18px;border:1px solid var(--ink);text-decoration:none;background:var(--ink);color:var(--sheet);transition:transform .2s ease-out}.button:hover{transform:translateY(-2px)}.button.secondary{background:transparent;color:var(--ink)}main{background:var(--sheet)}section{padding:100px 0;border-bottom:1px solid var(--rule)}.split{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:8vw;align-items:start}h2{font-size:clamp(2.8rem,6vw,5.5rem);line-height:.92;letter-spacing:-.03em;margin:0}h3{font-size:1.5rem;margin:0 0 8px}.section-copy{max-width:65ch;color:var(--muted);margin-top:28px}.terminal{background:#1c201c;color:#e8e3d8;padding:26px;box-shadow:var(--shadow);font:400 clamp(.8rem,1.5vw,1rem)/1.75 "IBM Plex Mono",monospace;overflow:auto;border-radius:2px}.prompt{color:#ef8469}.ok{color:#88b69b}.dim{color:#b1b3aa}.checks{border-top:1px solid var(--rule)}.check{display:grid;grid-template-columns:130px 1fr;gap:28px;padding:28px 0;border-bottom:1px solid var(--rule)}.check .mono{font-size:.72rem;text-transform:uppercase;color:var(--red);letter-spacing:.04em}.finding{margin-top:40px;border-top:1px solid var(--red);padding-top:22px}.finding blockquote{font-size:1.35rem;margin:20px 0;padding-left:22px;border-left:1px solid var(--rule)}.finding .versus{color:var(--red);font:500 .75rem "IBM Plex Mono",monospace}.numbers{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--rule);margin-top:44px}.number{padding:24px 18px 24px 0;border-bottom:1px solid var(--rule)}.number strong{display:block;font-size:2rem;font-weight:650}.number span{font:400 .7rem "IBM Plex Mono",monospace;color:var(--muted);text-transform:uppercase}.install{background:var(--ink);color:var(--sheet)}.install .section-copy{color:#c3c4bd}.install pre{border-top:1px solid #5d615a;border-bottom:1px solid #5d615a;padding:24px 0;font-size:clamp(.8rem,2vw,1.05rem);white-space:pre-wrap;overflow-wrap:anywhere}.install a{color:#ef8469}footer{padding:30px 0;background:var(--ink);color:#c3c4bd;font:400 .75rem "IBM Plex Mono",monospace}.footer-row{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}@media(max-width:760px){body{font-size:17px}.wrap{width:min(100% - 28px,1180px)}.nav{left:14px;right:14px}.nav-links{gap:14px}.hero{min-height:720px}.hero h1{font-size:5.4rem}.split{grid-template-columns:1fr;gap:48px}section{padding:70px 0}.check{grid-template-columns:1fr;gap:6px}.numbers{grid-template-columns:repeat(2,1fr)}.number:last-child{grid-column:1/-1}}
+    @media(prefers-reduced-motion:no-preference){.hero-copy{animation:reveal .7s cubic-bezier(.16,1,.3,1) both}@keyframes reveal{from{opacity:.01;transform:translateY(20px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}}
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <nav class="nav" aria-label="Main navigation"><a href="#top" class="mono">jev-lint / 0.1.0</a><div class="nav-links"><a href="#how">How it works</a><a href="https://github.com/vayungodara/jev-lint">GitHub</a></div></nav>
+      <div class="hero-copy" id="top">
+        <h1>jev-lint<span>Find the claims your second brain forgot to question.</span></h1>
+        <p class="lede">A cost-capped linter for Obsidian vaults and Markdown wikis. It finds possible contradictions, dated claims, unresolved markers, and missing pages—then shows the exact evidence.</p>
+        <div class="actions"><a class="button" href="#install">Install with pipx</a><a class="button secondary" href="https://github.com/vayungodara/jev-lint">Read the source</a></div>
+      </div>
+    </div>
+  </header>
+  <main>
+    <section>
+      <div class="wrap split">
+        <div><h2>Lint before lore hardens.</h2><p class="section-copy">Regex catches broken syntax. jev-lint adds a narrow semantic pass for claims that disagree or age badly, using TypeSafe Jev as a second opinion—not a hidden editor.</p></div>
+        <pre class="terminal"><span class="prompt">$</span> jev-lint ~/vault
+
+<span class="dim">99 pages · 1,267 Jev questions</span>
+<span class="prompt">possible contradiction</span>
+  wiki/decisions/agent-routing.md:18
+<span class="ok">possibly stale claim</span>
+  wiki/decisions/network-guard.md:14
+
+<span class="dim">113.9s · 16 findings · $0.0243</span></pre>
+      </div>
+    </section>
+    <section id="how">
+      <div class="wrap split">
+        <div><h2>Four checks.<br>Two kinds of evidence.</h2></div>
+        <div class="checks">
+          <div class="check"><span class="mono">Jev signal</span><div><h3>Possible contradictions</h3><p>Compares exact claim pairs from linked or strongly overlapping pages.</p></div></div>
+          <div class="check"><span class="mono">Jev signal</span><div><h3>Possibly stale claims</h3><p>Scores dated statements that may need a current source.</p></div></div>
+          <div class="check"><span class="mono">Rule check</span><div><h3>Unresolved markers</h3><p>Finds TODO, FIXME, <code>[?]</code>, and explicit unresolved comments.</p></div></div>
+          <div class="check"><span class="mono">Rule check</span><div><h3>Missing pages</h3><p>Resolves Obsidian wikilinks against scanned paths, titles, and aliases.</p></div></div>
+        </div>
+      </div>
+    </section>
+    <section>
+      <div class="wrap split">
+        <div><h2>Evidence, not vibes.</h2><p class="section-copy">Every semantic flag is tied to the quote Jev actually scored. The report keeps rule checks separate from model probabilities and makes its sampling limits explicit.</p></div>
+        <div class="finding"><div class="meta"><span>POSSIBLE CONTRADICTION</span><span>Jev probability 91%</span></div><blockquote>“The Atlas platform serves every API request from Amsterdam.”</blockquote><div class="versus">VERSUS</div><blockquote>“The Atlas platform serves every API request from Frankfurt.”</blockquote><p>Verify scope and dates before changing either note.</p></div>
+      </div>
+    </section>
+    <section>
+      <div class="wrap"><h2>A real vault, one bounded pass.</h2><div class="numbers"><div class="number"><strong>99</strong><span>pages</span></div><div class="number"><strong>1,267</strong><span>questions</span></div><div class="number"><strong>113.9</strong><span>seconds</span></div><div class="number"><strong>16</strong><span>findings</span></div><div class="number"><strong>$0.0243</strong><span>input cost</span></div></div><p class="section-copy">Measured on a personal Markdown knowledge base on 17 September 2026. See the README for scope and limitations.</p></div>
+    </section>
+    <section class="install" id="install">
+      <div class="wrap split"><div><h2>Run it where your notes live.</h2><p class="section-copy">Python 3.11+. Your vault remains local; only selected claim text is sent for semantic scoring.</p></div><div><pre>pipx install git+https://github.com/vayungodara/jev-lint
+jev-lint ~/path/to/vault --dry-run
+jev-lint ~/path/to/vault --open</pre><p><a href="https://github.com/vayungodara/jev-lint#readme">Installation, limits, and cost model →</a></p></div></div>
+    </section>
+  </main>
+  <footer><div class="wrap footer-row"><span>MIT licensed · built with TypeSafe Jev</span><span>Agents wrote most of this.</span></div></footer>
+</body>
+</html>
