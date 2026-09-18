@@ -366,8 +366,15 @@ def score_questions(questions: list[Question], ask: Callable[[Any, dict[str, Any
             return None
         return Finding(q.kind, q.path, q.line, q.quote, "This exact claim crossed the stale threshold; verify it against a current source.", probability, confidence)
 
+    findings = []
+    tty = sys.stderr.isatty()
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        return [finding for finding in pool.map(one, questions) if finding]
+        for done, finding in enumerate(pool.map(one, questions), 1):
+            if finding:
+                findings.append(finding)
+            if tty and (done % 50 == 0 or done == len(questions)):
+                print(f"\r{done}/{len(questions)} questions scored", end="\n" if done == len(questions) else "", file=sys.stderr, flush=True)
+    return findings
 
 
 def report_html(result: dict[str, Any]) -> str:
@@ -415,6 +422,7 @@ def run(vault: pathlib.Path, budget: float, dry_run: bool, ask: Callable[[Any, d
         raise RuntimeError(f"Estimated Jev cost {usd(estimated_cost)} exceeds the {usd(budget)} budget; raise --budget to continue")
     if client and billable:
         client.api_key  # fail before any scoring when no key is configured
+        print(f"jev-lint: asking Jev {len(billable)} questions ({len(questions) - len(billable)} cached), estimated {usd(estimated_cost)}", file=sys.stderr)
     findings = deterministic_findings(pages)
     if questions:
         try:
