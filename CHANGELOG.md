@@ -18,7 +18,7 @@ Review pass after the 0.1.0 launch. See `REVIEW.md` for the findings behind each
 
 ### Added
 
-- `--output FILE` (`-o`), `--version`, documented exit codes, Ctrl-C exits 130.
+- `--output FILE` (`-o`), `--version`, documented exit codes, Ctrl-C exits 130. A directory with no Markdown pages is an error (exit 2) instead of an empty report.
 - Claims are capped at 2,000 characters before they are sent to Jev.
 
 ## 0.1.0 (2026-09-17)

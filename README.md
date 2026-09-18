@@ -41,7 +41,7 @@ jev-lint ~/path/to/vault --output ~/reports/vault.html
 
 The default budget is $1.00. A run is refused before any API call when its estimated uncached input cost exceeds the budget. Change the cap explicitly with `--budget USD`. `--dry-run` never refuses; it prints the estimate, notes when it exceeds the budget, and never needs an API key.
 
-Exit status: 0 no findings, 1 findings, 2 error or estimate over budget, 130 interrupted. jev-lint only overwrites a report it wrote itself.
+Exit status: 0 no findings, 1 findings, 2 error (including no Markdown pages found or a dry-run estimate over budget), 130 interrupted. jev-lint only overwrites a report it wrote itself.
 
 ### Real run
 

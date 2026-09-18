@@ -331,6 +331,11 @@ class JevClient:
             self.dirty = False
 
 
+def usd(amount: float) -> str:
+    """Dollars with enough digits that a non-zero amount never prints as $0.0000."""
+    return f"${amount:.4f}" if amount == 0 or amount >= 0.00005 else f"${amount:.6f}"
+
+
 def estimate_cost(questions: list[Question]) -> tuple[int, float]:
     if not questions:
         return 0, 0.0
@@ -407,7 +412,7 @@ def run(vault: pathlib.Path, budget: float, dry_run: bool, ask: Callable[[Any, d
     if dry_run:
         return {"pages": len(pages), "questions": len(questions), "cached_questions": len(questions) - len(billable), "estimated_tokens": estimated_tokens, "estimated_cost": estimated_cost, "budget": budget, "dry_run": True}
     if estimated_cost > budget:
-        raise RuntimeError(f"Estimated Jev cost ${estimated_cost:.4f} exceeds the ${budget:.2f} budget; raise --budget to continue")
+        raise RuntimeError(f"Estimated Jev cost {usd(estimated_cost)} exceeds the {usd(budget)} budget; raise --budget to continue")
     if client and billable:
         client.api_key  # fail before any scoring when no key is configured
     findings = deterministic_findings(pages)
@@ -468,12 +473,13 @@ def main(argv: list[str] | None = None) -> int:
         return 130
     if result["pages"] == 0:
         print(f"jev-lint: no Markdown pages found under {vault}", file=sys.stderr)
+        return 2
     if args.dry_run:
         over = result["estimated_cost"] > args.budget
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f'{result["pages"]} pages · {result["questions"]} Jev questions ({result["cached_questions"]} cached) · estimated ${result["estimated_cost"]:.4f} ({result["estimated_tokens"]:,} input tokens)' + (f' · exceeds the ${args.budget:.2f} budget' if over else ""))
+            print(f'{result["pages"]} pages · {result["questions"]} Jev questions ({result["cached_questions"]} cached) · estimated {usd(result["estimated_cost"])} ({result["estimated_tokens"]:,} input tokens)' + (f' · exceeds the {usd(args.budget)} budget' if over else ""))
         return 2 if over else 0
     rendered = report_html(result).replace("<head>", '<head><meta name="generator" content="jev-lint">', 1)
     temporary = output.with_name(output.name + ".tmp")
@@ -490,7 +496,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f'{result["pages"]} pages · {result["questions"]} Jev questions · {len(result["findings"])} findings')
         for finding in result["findings"]:
             print(f'- {finding["kind"]}: {finding["path"]}:{finding["line"]} — {finding["why"]}')
-        print(f'{result["seconds"]:.1f}s · {result["input_tokens"]:,} input tokens · ${result["cost"]:.4f} · {output}')
+        print(f'{result["seconds"]:.1f}s · {result["input_tokens"]:,} input tokens · {usd(result["cost"])} · {output}')
     if args.open_report:
         webbrowser.open(output.as_uri())
     return 1 if result["findings"] else 0

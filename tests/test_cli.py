@@ -335,9 +335,9 @@ def test_cli_exit_codes_and_report(tmp_path, monkeypatch, capsys):
     assert main([str(FIXTURE), "--budget", "-1"]) == 2
 
     (tmp_path / "empty").mkdir()
-    assert main([str(tmp_path / "empty")]) == 0
+    assert main([str(tmp_path / "empty")]) == 2
     assert "no Markdown pages" in capsys.readouterr().err
-    assert 'name="generator" content="jev-lint"' in (tmp_path / "report.html").read_text()
+    assert not (tmp_path / "report.html").exists()
 
     (tmp_path / "mine.html").write_text("<p>hand written</p>")
     assert main([str(FIXTURE), "-o", "mine.html"]) == 2
@@ -350,7 +350,7 @@ def test_cli_exit_codes_and_report(tmp_path, monkeypatch, capsys):
     assert main([str(FIXTURE), "-o", "out/report.html"]) == 1, "own report must be overwritable"
 
     assert main([str(FIXTURE), "--dry-run", "--budget", "0"]) == 2
-    assert "exceeds the $0.00 budget" in capsys.readouterr().out
+    assert "exceeds the $0.0000 budget" in capsys.readouterr().out
     with pytest.raises(SystemExit) as exc:
         main(["--version"])
     assert exc.value.code == 0 and cli.__version__ in capsys.readouterr().out
@@ -373,3 +373,9 @@ def test_live_fixture_cost_under_two_cents(tmp_path):
     assert result["cost"] < 0.02
     contradiction = next(f for f in result["findings"] if f["kind"] == "contradiction")
     assert contradiction["confidence"] is None, "noul answers carry no confidence; do not invent one"
+
+
+def test_usd_never_hides_a_nonzero_cost():
+    assert cli.usd(0) == "$0.0000"
+    assert cli.usd(0.024318) == "$0.0243"
+    assert cli.usd(3.4356e-05) == "$0.000034"
