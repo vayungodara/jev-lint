@@ -94,7 +94,7 @@ The overwrite guard ran outside the `try` that maps `OSError` to exit 2, and rea
 - Atomic report write via temp file and `os.replace`; the overwrite guard uses the generator meta tag. Kept.
 - `Executor.map` cancels queued futures when the consumer stops iterating after an observed exception, so a failing question does not run the rest of the vault first. I initially added `shutdown(cancel_futures=True)`; `test_failure_cancels_queued_questions` passed on main without it, so the change was dropped. The oracle notes the remaining gap (see Recorded 8).
 - Numeric claims in README and PRODUCT.md match `vault-run-final.json` (99 pages, 1,267 questions, 579,006 tokens, $0.0243, 113.9 s, 2 contradiction, 1 stale, 1 missing-page, 12 unresolved). A rerun on 2026-09-18 with this branch and the owner's cache gave 10 unresolved, 1 stale (0.89/0.79 instead of 0.91/0.83, re-asked because the date changed), and 3 contradictions: the two recorded pairs at 0.83 and 0.68 (recorded 0.84 and 0.71, so the cache holds a later run than the recorded one) plus `wiki/decisions/2026-09-amp-agent-routing.md:18` at exactly 0.65. Jev answers vary by a few hundredths between runs; the README now says a pair near the threshold can flip.
-- Budget math: the estimate uses ⅔ token per serialized character, which overestimated the reference run by about 1.4× (measured 579,006 tokens for 1,267 questions). Conservative by design; left as is.
+- Budget math: the estimate uses ⅔ token per serialized character, which overestimates the reference run by 1.16× (673,537 estimated against 579,006 measured tokens for 1,267 questions; the `estimated_cost` inside `vault-run-final.json` predates the conservative ratio in 932ab52). Conservative by design; left as is.
 
 ## Recorded, not fixed
 
