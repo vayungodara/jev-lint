@@ -34,9 +34,14 @@ jev-lint ~/path/to/vault --open
 
 # Return the result as JSON
 jev-lint ~/path/to/vault --json
+
+# Write the report somewhere else
+jev-lint ~/path/to/vault --output ~/reports/vault.html
 ```
 
-The default budget is $1.00. A run is refused before any API call when its estimated uncached input cost exceeds the budget. Change the cap explicitly with `--budget USD`.
+The default budget is $1.00. A run is refused before any API call when its estimated uncached input cost exceeds the budget. Change the cap explicitly with `--budget USD`. `--dry-run` never refuses; it prints the estimate, notes when it exceeds the budget, and never needs an API key.
+
+Exit status: 0 no findings, 1 findings, 2 error or estimate over budget, 130 interrupted. jev-lint only overwrites a report it wrote itself.
 
 ### Real run
 
@@ -48,23 +53,23 @@ $ jev-lint ~/brain
 113.9s · 579,006 input tokens · $0.0243 · report.html
 ```
 
-The findings comprised 2 contradiction signals, 1 stale-claim signal, 1 missing-page rule finding, and 12 unresolved-marker rule findings. These figures describe that vault and that run, not a performance guarantee.
+The findings comprised 2 contradiction signals, 1 stale-claim signal, 1 missing-page rule finding, and 12 unresolved-marker rule findings. These figures describe that vault and that run with version 0.1.0, not a performance guarantee. Version 0.1.1 ignores markers and links inside inline code, which removes 3 of those rule findings on the same vault.
 
 ## What it checks
 
-**Possible contradictions.** Claim pairs are nominated from linked pages, pages under the same parent, or pages with unusually strong lexical overlap. Jev scores the exact pair. Pairs at or above the configured threshold become findings.
+**Possible contradictions.** Claim pairs are nominated from linked pages, pages under the same parent, or pages with unusually strong lexical overlap. Jev scores the exact pair. Pairs with a contradiction probability of 0.65 or more become findings.
 
-**Possibly stale claims.** Dated statements and claims on older pages are scored against the run date. A finding requires both a high stale score and sufficient confidence.
+**Possibly stale claims.** Dated statements and claims on older pages are scored against the run date. A finding requires a probability-weighted stale score of at least 1.5 on the 0–2 scale (0 current, 1 may have changed, 2 clearly outdated) and a confidence of at least 0.5.
 
-**Unresolved markers.** `TODO`, `FIXME`, `[?]`, and explicit unresolved comments are found locally.
+**Unresolved markers.** `TODO`, `FIXME`, `[?]`, and explicit unresolved comments are found locally. Markers inside code fences or inline code are ignored.
 
-**Missing pages.** Wikilink paths, page names, titles, and aliases are resolved locally. Embedded attachments are not treated as pages.
+**Missing pages.** Wikilink paths, page names, titles, and aliases are resolved locally, including `[[folder/page]]`, `[[page#heading]]`, and `[[page|alias]]` forms. Links to attachments such as images and PDFs are not treated as pages.
 
 For Vayun-style wikis with both `index.md` and a `wiki/` directory, jev-lint scans the Markdown pages under `wiki/`. Other vaults are scanned recursively from the supplied directory.
 
 ## Cost and caching
 
-TypeSafe Jev input is priced at $0.042 per million input tokens. `--dry-run` makes a conservative token estimate from the serialized questions and makes no network request. The preflight budget considers only cache misses. Successful responses are cached by a hash of the model, state, and question, so unchanged reruns avoid repeat calls.
+TypeSafe Jev input is priced at $0.042 per million input tokens. `--dry-run` makes a conservative token estimate from the serialized questions and makes no network request. The preflight budget considers only cache misses. Successful responses are cached in `~/.cache/jev-lint/responses.json` by a hash of the model, state, and question, so unchanged reruns avoid repeat calls. Delete that file to force a fresh run.
 
 The output cost is calculated from input-token usage returned by the API. It is an estimate, not an invoice.
 
