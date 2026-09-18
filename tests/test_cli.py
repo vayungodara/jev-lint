@@ -95,6 +95,13 @@ def test_line_numbers_skip_frontmatter_and_fences(tmp_path):
     assert [(f.kind, f.line) for f in findings] == [("unresolved", 12), ("unresolved", 19)]
 
 
+def test_fence_edge_cases_follow_commonmark(tmp_path):
+    write(tmp_path, {"a.md": "```md\n    ```\nTODO still code: an indented closer does not close\n```\nTODO prose on line five\n```example```\nTODO prose on line seven, the line above is an inline span\n"})
+    page = load_pages(tmp_path)[0]
+    assert [n for n, _ in page.lines] == [5, 6, 7]
+    assert [f.line for f in deterministic_findings([page])] == [5, 7]
+
+
 def test_empty_frontmatter_does_not_swallow_body(tmp_path):
     write(tmp_path, {"a.md": "---\n---\nTODO first body line\n\n---\n\nafter a horizontal rule\n"})
     page = load_pages(tmp_path)[0]
@@ -145,6 +152,18 @@ def test_wikilink_resolution(tmp_path):
 def test_markers_inside_inline_code_are_ignored(tmp_path):
     write(tmp_path, {"a.md": "Pages keep their `[?]` marker until checked.\nStill open [?] here.\nTO`x`DO is not a marker.\n"})
     assert [f.line for f in deterministic_findings(load_pages(tmp_path))] == [2]
+
+
+@pytest.mark.parametrize("line,masked", [
+    ("``TODO`` and ``TODO `x` ``", True),  # double-backtick spans, one containing a single backtick
+    ("``TODO [[missing]]`", False),  # unequal runs: not a span
+    ("`before ```` TODO after`", True),  # one single-backtick span containing a four-backtick run
+    ("\\`TODO [[missing]]`", False),  # escaped opener: not a span
+    ("`a` TODO `b`", False),  # marker between two spans
+])
+def test_code_span_runs_must_match_exactly(tmp_path, line, masked):
+    write(tmp_path, {"a.md": line + "\n"})
+    assert (deterministic_findings(load_pages(tmp_path)) == []) is masked
 
 
 # --- question construction ---------------------------------------------------------
@@ -278,10 +297,11 @@ def test_missing_key_fails_before_scoring(tmp_path, monkeypatch, capsys):
 def test_key_is_stripped_and_never_echoed(tmp_path, monkeypatch):
     monkeypatch.setenv("TYPESAFE_API_KEY", " sk-trailing-newline\n")
     assert JevClient(tmp_path / "c.json").api_key == "sk-trailing-newline"
-    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-inner space")  # urllib would echo this in a ValueError
-    with pytest.raises(RuntimeError) as info:
-        JevClient(tmp_path / "c.json").api_key
-    assert "sk-inner" not in str(info.value)
+    for bad in ("sk-a\nb", "sk-a\rb", "sk-a\x7fb", "sk-ключ", "sk-a b"):  # urllib echoes the header value for the first three
+        monkeypatch.setenv("TYPESAFE_API_KEY", bad)
+        with pytest.raises(RuntimeError) as info:
+            JevClient(tmp_path / "c.json").api_key
+        assert "sk-" not in str(info.value)
     monkeypatch.setenv("TYPESAFE_API_KEY", "   ")
     monkeypatch.setattr(cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
     (tmp_path / ".config/amp").mkdir(parents=True)
@@ -420,6 +440,25 @@ def test_live_fixture_cost_under_two_cents(tmp_path):
     assert result["cost"] < 0.02
     contradiction = next(f for f in result["findings"] if f["kind"] == "contradiction")
     assert contradiction["confidence"] is None, "noul answers carry no confidence; do not invent one"
+
+
+def test_atomic_write_failure_leaves_destination_and_no_temp(tmp_path, monkeypatch):
+    target = tmp_path / "out.txt"
+    target.write_text("old")
+    monkeypatch.setattr(cli.os, "replace", lambda a, b: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError):
+        cli.atomic_write(target, "new")
+    assert target.read_text() == "old" and list(tmp_path.iterdir()) == [target]
+
+
+def test_closed_stdout_exits_cleanly_without_traceback():
+    import subprocess, sys as _sys
+    for argv in (["--version"], [str(FIXTURE), "--dry-run"]):
+        r, w = os.pipe()
+        os.close(r)
+        proc = subprocess.run([_sys.executable, "-m", "jev_lint.cli", *argv], stdout=w, stderr=subprocess.PIPE, text=True, env={**os.environ, "HOME": str(FIXTURE.parent)})
+        os.close(w)
+        assert proc.returncode in (0, 2) and "Traceback" not in proc.stderr and "Exception ignored" not in proc.stderr, (argv, proc.returncode, proc.stderr)
 
 
 def test_usd_never_hides_a_nonzero_cost():

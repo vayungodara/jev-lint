@@ -32,7 +32,7 @@ PRICE_PER_INPUT_TOKEN = 0.042 / 1_000_000
 DEFAULT_BUDGET = 1.0
 # Obsidian: [[page]], [[page#heading]], [[page|alias]], and [[page\|alias]] inside tables.
 LINK_RE = re.compile(r"\[\[([^\]|#\\]+)(?:#[^\]|\\]+)?(?:\\?\|[^\]]+)?\]\]")
-CODE_SPAN_RE = re.compile(r"(`+)[^\n]+?\1")
+BACKTICK_RUN_RE = re.compile(r"(?<!\\)`+")
 DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2}|20\d{2})\b")
 MARKER_RE = re.compile(r"(?:\bTODO\b|\bFIXME\b|\[\?\]|<!--\s*unresolved\s*-->)", re.I)
 WORD_RE = re.compile(r"[a-z][a-z0-9-]{2,}", re.I)
@@ -120,15 +120,34 @@ def visible_lines(text: str, offset: int) -> list[tuple[int, str]]:
         if number <= offset:
             continue
         stripped = raw.strip()
-        if not fence and stripped.startswith(("```", "~~~")):
-            fence = stripped[0] * (len(stripped) - len(stripped.lstrip(stripped[0])))
-            continue
-        if fence and stripped.startswith(fence) and not stripped.strip(fence[0]):
+        indented = len(raw) - len(raw.lstrip(" ")) > 3  # four spaces make it indented code, never a fence
+        if not fence and not indented and stripped.startswith(("```", "~~~")):
+            run = stripped[0] * (len(stripped) - len(stripped.lstrip(stripped[0])))
+            if not (run[0] == "`" and "`" in stripped[len(run):]):  # ```x``` is an inline span, not a fence
+                fence = run
+                continue
+        if fence and not indented and stripped.startswith(fence) and not stripped.strip(fence[0]):
             fence = ""
             continue
         if not fence and stripped:
             out.append((number, raw.rstrip()))
     return out
+
+
+def mask_code_spans(line: str) -> str:
+    """Replace inline code spans with spaces so positions stay aligned with the source line."""
+    runs = [(m.start(), m.end()) for m in BACKTICK_RUN_RE.finditer(line)]
+    out = list(line)
+    i = 0
+    while i < len(runs):
+        start, end = runs[i]
+        close = next((j for j in range(i + 1, len(runs)) if runs[j][1] - runs[j][0] == end - start), None)
+        if close is None:
+            i += 1
+            continue
+        out[start:runs[close][1]] = " " * (runs[close][1] - start)
+        i = close + 1
+    return "".join(out)
 
 
 def load_pages(vault: pathlib.Path) -> list[Page]:
@@ -242,7 +261,7 @@ def deterministic_findings(pages: list[Page]) -> list[Finding]:
     findings: list[Finding] = []
     for page in pages:
         for line, text in page.lines:
-            scan = CODE_SPAN_RE.sub(lambda m: " " * len(m.group()), text)  # mask, keep positions
+            scan = mask_code_spans(text)
             if MARKER_RE.search(scan):
                 findings.append(Finding("unresolved", page.path, line, text, "An unresolved marker remains in the page.", None, None))
             for link in LINK_RE.finditer(scan):
@@ -360,7 +379,7 @@ def answer_values(spec: dict[str, Any], answer: Any) -> tuple[float, float | Non
             values = float(answer["probabilities"]["2"]), float(answer["score"]), float(answer["confidence"])
         if not all(math.isfinite(v) for v in values if v is not None):
             raise ValueError
-    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as exc:
         raise RuntimeError("TypeSafe Jev returned an unexpected answer") from exc
     return values
 
@@ -493,12 +512,17 @@ def foreign(output: pathlib.Path) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = parser().parse_args(argv)
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(errors="replace")
     try:
-        return lint(args)
+        try:
+            for stream in (sys.stdout, sys.stderr):
+                if hasattr(stream, "reconfigure"):
+                    stream.reconfigure(errors="replace")
+            return lint(parser().parse_args(argv))
+        finally:
+            sys.stdout.flush()  # surface a closed pipe here, not as an "Exception ignored" at shutdown
+    except BrokenPipeError:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 2
     except (RuntimeError, OSError) as exc:
         print(f"jev-lint: {exc}", file=sys.stderr)
         return 2
