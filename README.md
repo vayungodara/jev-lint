@@ -2,7 +2,7 @@
 
 Find possible contradictions, stale claims, unresolved markers, and dangling wikilinks in a Markdown knowledge base.
 
-jev-lint is built for ordinary Obsidian vaults and structured LLM wikis. It runs mechanical checks locally, sends only selected claim text to [TypeSafe Jev](https://typesafe.ai/) for semantic scoring, and writes a self-contained `report.html` with the exact evidence behind every flag.
+jev-lint is built for ordinary Obsidian vaults and structured LLM wikis. It runs mechanical checks locally, sends only selected claims (plus the page title, `updated` date, and run date for staleness checks) to [TypeSafe Jev](https://typesafe.ai/) for semantic scoring, and writes a self-contained `report.html` with the exact evidence behind every flag.
 
 ## Install
 
@@ -57,7 +57,7 @@ The findings comprised 2 contradiction signals, 1 stale-claim signal, 1 missing-
 
 ## What it checks
 
-**Possible contradictions.** Claim pairs are nominated from linked pages, pages under the same parent, or pages with unusually strong lexical overlap. Jev scores the exact pair. Pairs with a contradiction probability of 0.65 or more become findings.
+**Possible contradictions.** Claim pairs are nominated from linked pages, pages under the same parent, or pages with unusually strong lexical overlap. Jev scores the exact pair. Pairs with a contradiction probability of 0.65 or more become findings. Jev's probabilities vary by a few hundredths between runs, so a pair near the threshold can appear in one run and not the next.
 
 **Possibly stale claims.** Dated statements and claims on older pages are scored against the run date. A finding requires a probability-weighted stale score of at least 1.5 on the 0–2 scale (0 current, 1 may have changed, 2 clearly outdated) and a confidence of at least 0.5.
 
@@ -69,7 +69,7 @@ For Vayun-style wikis with both `index.md` and a `wiki/` directory, jev-lint sca
 
 ## Cost and caching
 
-TypeSafe Jev input is priced at $0.042 per million input tokens. `--dry-run` makes a conservative token estimate from the serialized questions and makes no network request. The preflight budget considers only cache misses. Successful responses are cached in `~/.cache/jev-lint/responses.json` by a hash of the model, state, and question, so unchanged reruns avoid repeat calls. Delete that file to force a fresh run.
+TypeSafe Jev input is priced at $0.042 per million input tokens. `--dry-run` makes a conservative token estimate from the serialized questions and makes no network request. The preflight budget considers only cache misses. Successful responses are cached in `~/.cache/jev-lint/responses.json` by a hash of the model, state, and question, so unchanged reruns avoid repeat calls. Staleness questions include the run date, so they are asked again on a new day. Delete that file to force a fresh run.
 
 The output cost is calculated from input-token usage returned by the API. It is an estimate, not an invoice.
 

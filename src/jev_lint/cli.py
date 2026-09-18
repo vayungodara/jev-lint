@@ -13,6 +13,7 @@ import re
 import math
 import ssl
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -281,13 +282,19 @@ class JevClient:
 
     @functools.cached_property
     def api_key(self) -> str:
-        if key := os.environ.get("TYPESAFE_API_KEY"):
-            return key
-        settings = pathlib.Path.home() / ".config/amp/settings.json"
-        try:
-            return json.loads(settings.read_text())["amp.mcpServers"]["jev"]["env"]["TYPESAFE_API_KEY"]
-        except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
-            raise RuntimeError("TYPESAFE_API_KEY is not set. Export it (keys: https://typesafe.ai) or configure it for the Jev MCP server in Amp settings") from exc
+        key = os.environ.get("TYPESAFE_API_KEY", "")
+        if not key.strip():
+            try:
+                key = str(json.loads((pathlib.Path.home() / ".config/amp/settings.json").read_text())["amp.mcpServers"]["jev"]["env"]["TYPESAFE_API_KEY"] or "")
+            except (OSError, KeyError, TypeError, json.JSONDecodeError):
+                key = ""
+        key = key.strip()
+        if not key:
+            raise RuntimeError("TYPESAFE_API_KEY is not set. Export it (keys: https://typesafe.ai) or configure it for the Jev MCP server in Amp settings")
+        if not key.isascii() or not key.isprintable() or " " in key:
+            # Never include the key: urllib would otherwise echo it in a ValueError.
+            raise RuntimeError("TYPESAFE_API_KEY contains whitespace or non-printable characters")
+        return key
 
     def ask(self, state: Any, spec: dict[str, Any]) -> dict[str, Any]:
         payload = {"state": state, "model": MODEL, "questions": {"check": spec}}
@@ -302,6 +309,7 @@ class JevClient:
                 with urllib.request.urlopen(request, timeout=60, context=self.context) as response:
                     data = json.load(response)
                 answer = data["answers"]["check"]
+                answer_values(spec, answer)  # never cache an answer we cannot read
                 break
             except urllib.error.HTTPError as exc:
                 if (exc.code in (429, 529) or exc.code >= 500) and attempt < 4:
@@ -314,7 +322,7 @@ class JevClient:
             except (json.JSONDecodeError, KeyError, TypeError) as exc:
                 raise RuntimeError("TypeSafe Jev returned an unexpected response") from exc
         with self.lock:
-            usage = data.get("usage", {})
+            usage = data.get("usage") or {}
             self.input_tokens += int(usage.get("input_tokens", 0))
             self.output_tokens += int(usage.get("output_tokens", 0))
             self.calls += 1
@@ -327,10 +335,34 @@ class JevClient:
             if not self.dirty:
                 return
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = self.cache_path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(self.cache, sort_keys=True))
-            os.replace(temporary, self.cache_path)
+            atomic_write(self.cache_path, json.dumps(self.cache, sort_keys=True))
             self.dirty = False
+
+
+def atomic_write(path: pathlib.Path, text: str) -> None:
+    """Write via a fresh exclusive temp file in the same directory, then rename over path."""
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(temporary, path)
+    except BaseException:
+        pathlib.Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def answer_values(spec: dict[str, Any], answer: Any) -> tuple[float, float | None, float | None]:
+    """(probability, score, confidence) from a Jev answer; RuntimeError if any needed field is missing or not finite."""
+    try:
+        if spec["type"] == "noul":
+            values = float(answer["noul"]), None, None if answer.get("confidence") is None else float(answer["confidence"])
+        else:
+            values = float(answer["probabilities"]["2"]), float(answer["score"]), float(answer["confidence"])
+        if not all(math.isfinite(v) for v in values if v is not None):
+            raise ValueError
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise RuntimeError("TypeSafe Jev returned an unexpected answer") from exc
+    return values
 
 
 def usd(amount: float) -> str:
@@ -351,19 +383,11 @@ def estimate_cost(questions: list[Question]) -> tuple[int, float]:
 
 def score_questions(questions: list[Question], ask: Callable[[Any, dict[str, Any]], dict[str, Any]]) -> list[Finding]:
     def one(q: Question) -> Finding | None:
-        answer = ask(q.state, q.spec)
+        probability, score, confidence = answer_values(q.spec, ask(q.state, q.spec))
         if q.kind == "contradiction":
-            probability = float(answer["noul"])
             if probability < 0.65:
                 return None
-            return Finding(q.kind, q.path, q.line, q.quote, "These exact quotes crossed the contradiction threshold; verify their scope and dates.", probability, answer.get("confidence"), q.other_path, q.other_line, q.other_quote)
-        score = float(answer["score"])
-        confidence = float(answer.get("confidence", 0.0))
-        probabilities = answer.get("probabilities", {})
-        if isinstance(probabilities, dict):
-            probability = float(probabilities.get("2", 0.0))
-        else:
-            probability = float(probabilities[2]) if len(probabilities) > 2 else 0.0
+            return Finding(q.kind, q.path, q.line, q.quote, "These exact quotes crossed the contradiction threshold; verify their scope and dates.", probability, confidence, q.other_path, q.other_line, q.other_quote)
         if score < 1.5 or confidence < 0.5:
             return None
         return Finding(q.kind, q.path, q.line, q.quote, "This exact claim crossed the stale threshold; verify it against a current source.", probability, confidence)
@@ -458,32 +482,43 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
+def foreign(output: pathlib.Path) -> bool:
+    """True when something exists at output that jev-lint did not write."""
+    if output.is_symlink():
+        return True
+    if not output.exists():
+        return False
+    with output.open(encoding="utf-8", errors="ignore") as handle:
+        return 'name="generator" content="jev-lint"' not in handle.read(500)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
-        stream.reconfigure(errors="replace")
-    vault = args.vault_dir.expanduser().resolve()
-    if not vault.is_dir():
-        print(f"jev-lint: vault directory not found: {vault}", file=sys.stderr)
-        return 2
-    if not math.isfinite(args.budget) or args.budget < 0:
-        print("jev-lint: --budget must be non-negative", file=sys.stderr)
-        return 2
-    output = args.output.expanduser().absolute()
-    if not args.dry_run and (output.is_symlink() or (output.exists() and 'name="generator" content="jev-lint"' not in output.read_text(encoding="utf-8", errors="ignore")[:500])):
-        print(f"jev-lint: refusing to overwrite unrelated file: {output}", file=sys.stderr)
-        return 2
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     try:
-        result = run(vault, args.budget, args.dry_run)
+        return lint(args)
     except (RuntimeError, OSError) as exc:
         print(f"jev-lint: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         print("jev-lint: interrupted", file=sys.stderr)
         return 130
+
+
+def lint(args: argparse.Namespace) -> int:
+    vault = args.vault_dir.expanduser().resolve()
+    if not vault.is_dir():
+        raise RuntimeError(f"vault directory not found: {vault}")
+    if not math.isfinite(args.budget) or args.budget < 0:
+        raise RuntimeError("--budget must be non-negative")
+    output = args.output.expanduser().absolute()
+    if not args.dry_run and foreign(output):
+        raise RuntimeError(f"refusing to overwrite unrelated file: {output}")
+    result = run(vault, args.budget, args.dry_run)
     if result["pages"] == 0:
-        print(f"jev-lint: no Markdown pages found under {vault}", file=sys.stderr)
-        return 2
+        raise RuntimeError(f"no Markdown pages found under {vault}")
     if args.dry_run:
         over = result["estimated_cost"] > args.budget
         if args.json:
@@ -492,14 +527,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f'{result["pages"]} pages · {result["questions"]} Jev questions ({result["cached_questions"]} cached) · estimated {usd(result["estimated_cost"])} ({result["estimated_tokens"]:,} input tokens)' + (f' · exceeds the {usd(args.budget)} budget' if over else ""))
         return 2 if over else 0
     rendered = report_html(result).replace("<head>", '<head><meta name="generator" content="jev-lint">', 1)
-    temporary = output.with_name(output.name + ".tmp")
-    try:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        temporary.write_text(rendered, encoding="utf-8")
-        os.replace(temporary, output)
-    except OSError as exc:
-        print(f"jev-lint: could not write report: {exc}", file=sys.stderr)
-        return 2
+    if foreign(output):  # appeared during the run
+        raise RuntimeError(f"refusing to overwrite unrelated file: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(output, rendered)
     if args.json:
         print(json.dumps(result, indent=2))
     else:

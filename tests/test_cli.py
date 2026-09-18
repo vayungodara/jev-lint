@@ -268,10 +268,36 @@ def test_401_and_network_errors_become_clear_messages_without_the_key(tmp_path, 
 def test_missing_key_fails_before_scoring(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     monkeypatch.setattr(cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(cli.JevClient, "ask", lambda *a: pytest.fail("scoring started without a key"))
     monkeypatch.chdir(tmp_path)
     assert main([str(FIXTURE)]) == 2
     assert "TYPESAFE_API_KEY" in capsys.readouterr().err
     assert not (tmp_path / "report.html").exists()
+
+
+def test_key_is_stripped_and_never_echoed(tmp_path, monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", " sk-trailing-newline\n")
+    assert JevClient(tmp_path / "c.json").api_key == "sk-trailing-newline"
+    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-inner space")  # urllib would echo this in a ValueError
+    with pytest.raises(RuntimeError) as info:
+        JevClient(tmp_path / "c.json").api_key
+    assert "sk-inner" not in str(info.value)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "   ")
+    monkeypatch.setattr(cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+    (tmp_path / ".config/amp").mkdir(parents=True)
+    (tmp_path / ".config/amp/settings.json").write_text(json.dumps({"amp.mcpServers": {"jev": {"env": {"TYPESAFE_API_KEY": "from-settings "}}}}))
+    assert JevClient(tmp_path / "c.json").api_key == "from-settings"
+
+
+@pytest.mark.parametrize("answer", [{}, {"noul": "high"}, {"noul": float("nan")}, {"score": 2, "confidence": 0.9}, {"score": 2, "confidence": 0.9, "probabilities": [0.1, 0.1, 0.8]}])
+def test_malformed_answers_are_errors_and_never_cached(tmp_path, monkeypatch, answer):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    spec = {"type": "noul"} if "noul" in answer or not answer else {"type": "score"}
+    fake_http(monkeypatch, [reply(answer)])
+    client = JevClient(tmp_path / "cache.json")
+    with pytest.raises(RuntimeError, match="unexpected answer"):
+        client.ask("s", spec)
+    assert not client.has("s", spec) and not client.dirty
 
 
 def test_cache_hits_skip_network_and_budget(tmp_path, monkeypatch):
@@ -280,7 +306,10 @@ def test_cache_hits_skip_network_and_budget(tmp_path, monkeypatch):
     n = run(FIXTURE, 1.0, True, cache_path=cache)["questions"]
     # Workers consume replies in arrival order, so every reply must satisfy either question type.
     fake_http(monkeypatch, [reply({"noul": 0.97, **fake_jev(None, {"type": "score"})}) for _ in range(n)])
+    writes = []
+    monkeypatch.setattr(cli, "atomic_write", lambda path, text: writes.append(path) or path.write_text(text))
     first = run(FIXTURE, 1.0, False, cache_path=cache)
+    assert writes == [cache]  # once at the end, not after every answer
     assert first["api_calls"] == n and first["input_tokens"] == 100 * n
     assert first["cost"] == pytest.approx(100 * n * 0.042 / 1_000_000)
     assert json.loads(cache.read_text()) and len(json.loads(cache.read_text())) == n
@@ -345,9 +374,22 @@ def test_cli_exit_codes_and_report(tmp_path, monkeypatch, capsys):
     assert not (tmp_path / "report.html").exists()
 
     (tmp_path / "mine.html").write_text("<p>hand written</p>")
+    monkeypatch.setattr(cli.JevClient, "ask", lambda *a: pytest.fail("spent money before the overwrite check"))
     assert main([str(FIXTURE), "-o", "mine.html"]) == 2
     assert "refusing to overwrite" in capsys.readouterr().err
     assert (tmp_path / "mine.html").read_text() == "<p>hand written</p>"
+    assert main([str(FIXTURE), "-o", str(tmp_path)]) == 2  # a directory: exit 2, no traceback
+    assert "Is a directory" in capsys.readouterr().err
+
+    def appear_during_run(*a, **k):
+        (tmp_path / "late.html").write_text("<p>appeared during the run</p>")
+        return fake_jev(*a[1:], **k)
+    monkeypatch.setattr(cli.JevClient, "ask", appear_during_run)
+    assert main([str(FIXTURE), "-o", "late.html"]) == 2
+    assert "refusing to overwrite" in capsys.readouterr().err
+    assert (tmp_path / "late.html").read_text() == "<p>appeared during the run</p>"
+    assert not list(tmp_path.glob("*.tmp"))
+    monkeypatch.setattr(cli.JevClient, "ask", lambda self, state, spec: fake_jev(state, spec))
 
     assert main([str(FIXTURE), "-o", "out/report.html", "--json"]) == 1
     out = json.loads(capsys.readouterr().out)
