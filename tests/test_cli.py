@@ -90,9 +90,15 @@ def test_frontmatter_bullet_under_scalar_does_not_crash():
 
 
 def test_line_numbers_skip_frontmatter_and_fences(tmp_path):
-    write(tmp_path, {"a.md": "---\nupdated: 2020-01-01\n---\n# H\n\n```\nTODO inside backtick fence is code\n```\n~~~\nTODO inside tilde fence is code\n~~~\nTODO real marker on line twelve\n"})
+    write(tmp_path, {"a.md": "---\nupdated: 2020-01-01\n---\n# H\n\n```\nTODO inside backtick fence is code\n```\n~~~\nTODO inside tilde fence is code\n~~~\nTODO real marker on line twelve\n````md\n~~~\nTODO: a tilde line does not close a backtick fence\n```\nTODO: three backticks do not close four\n````\nTODO real marker on line nineteen\n"})
     findings = deterministic_findings(load_pages(tmp_path))
-    assert [(f.kind, f.line) for f in findings] == [("unresolved", 12)]
+    assert [(f.kind, f.line) for f in findings] == [("unresolved", 12), ("unresolved", 19)]
+
+
+def test_empty_frontmatter_does_not_swallow_body(tmp_path):
+    write(tmp_path, {"a.md": "---\n---\nTODO first body line\n\n---\n\nafter a horizontal rule\n"})
+    page = load_pages(tmp_path)[0]
+    assert page.lines[0] == (3, "TODO first body line") and len(page.lines) == 3
 
 
 def test_symlinks_and_hidden_dirs_are_not_scanned(tmp_path):
@@ -121,18 +127,23 @@ def test_wikilink_resolution(tmp_path):
             "[[sub/c]] [[deep/sub/c]] [[c]]",  # 3: shortest-path folder links
             "![[diagram.png]] [[diagram.png]] [[paper.pdf]] [[#local heading]]",  # 4: attachments and self links
             "`[[in code]]` and TODO `[[also code]]` [[really missing]]",  # 5: only the last one is a page link
-            "![[embedded-missing]]",  # 6: embeds are not checked
-            "[[Next.js]]",  # 7: dotted page name that does not exist
+            "![[embedded-missing]] ![[b]]",  # 6: embedded notes are links too
+            "[[Next.js]] [[b.MD]] [[missing.pdf.md]]",  # 7: dotted names; case-insensitive .md; a Markdown page named like a PDF
+            "``[[double]]`` and ``TODO `x` ``",  # 8: double-backtick spans
         ]),
         "b.md": "x", "My Note.md": "x", "deep/sub/c.md": "x",
         "t.md": "---\ntitle: Titled Page\naliases: [Alt Name]\n---\nx",
     })
     findings = deterministic_findings(load_pages(tmp_path))
-    assert [(f.kind, f.line, f.quote) for f in findings] == [("unresolved", 5, "`[[in code]]` and TODO `[[also code]]` [[really missing]]"), ("missing-page", 5, "[[really missing]]"), ("missing-page", 7, "[[Next.js]]")]
+    assert [(f.kind, f.line, f.quote) for f in findings] == [
+        ("unresolved", 5, "`[[in code]]` and TODO `[[also code]]` [[really missing]]"), ("missing-page", 5, "[[really missing]]"),
+        ("missing-page", 6, "[[embedded-missing]]"),
+        ("missing-page", 7, "[[Next.js]]"), ("missing-page", 7, "[[missing.pdf.md]]"),
+    ]
 
 
 def test_markers_inside_inline_code_are_ignored(tmp_path):
-    write(tmp_path, {"a.md": "Pages keep their `[?]` marker until checked.\nStill open [?] here.\n"})
+    write(tmp_path, {"a.md": "Pages keep their `[?]` marker until checked.\nStill open [?] here.\nTO`x`DO is not a marker.\n"})
     assert [f.line for f in deterministic_findings(load_pages(tmp_path))] == [2]
 
 
@@ -169,12 +180,6 @@ def test_stale_candidates_from_dates_or_old_pages(tmp_path):
     q = next(q for q in questions if q.path == "old.md")
     assert q.spec["type"] == "score" and len(q.spec["criteria"]) == 3
     assert q.state["today"] == today.isoformat() and q.state["claim"] == q.quote
-
-
-def test_long_lines_are_truncated_before_scoring(tmp_path):
-    write(tmp_path, {"a.md": "2024-01-01 " + "x" * 5000 + "\n"})
-    q = build_questions(load_pages(tmp_path))[0]
-    assert len(q.quote) == cli.MAX_QUOTE_CHARS and q.state["claim"] == q.quote
 
 
 # --- answer thresholds -------------------------------------------------------------

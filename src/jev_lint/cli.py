@@ -29,15 +29,14 @@ API = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
 PRICE_PER_INPUT_TOKEN = 0.042 / 1_000_000
 DEFAULT_BUDGET = 1.0
-MAX_QUOTE_CHARS = 2000
 # Obsidian: [[page]], [[page#heading]], [[page|alias]], and [[page\|alias]] inside tables.
 LINK_RE = re.compile(r"\[\[([^\]|#\\]+)(?:#[^\]|\\]+)?(?:\\?\|[^\]]+)?\]\]")
-CODE_SPAN_RE = re.compile(r"`[^`\n]*`")
+CODE_SPAN_RE = re.compile(r"(`+)[^\n]+?\1")
 DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2}|20\d{2})\b")
 MARKER_RE = re.compile(r"(?:\bTODO\b|\bFIXME\b|\[\?\]|<!--\s*unresolved\s*-->)", re.I)
 WORD_RE = re.compile(r"[a-z][a-z0-9-]{2,}", re.I)
 # Obsidian's accepted non-Markdown formats; a [[link]] to one is an attachment, not a missing page.
-ATTACHMENT_SUFFIXES = {".canvas", ".base", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp", ".avif", ".mp3", ".wav", ".m4a", ".3gp", ".flac", ".ogg", ".oga", ".opus", ".mp4", ".webm", ".ogv", ".mov", ".mkv"}
+ATTACHMENT_SUFFIXES = {".canvas", ".base", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp", ".avif", ".mp3", ".wav", ".m4a", ".3gp", ".flac", ".ogg", ".mp4", ".webm", ".ogv", ".mov", ".mkv"}
 STOP = {"about", "after", "also", "been", "being", "between", "could", "from", "have", "into", "more", "only", "other", "should", "than", "that", "their", "there", "these", "this", "those", "through", "under", "using", "when", "where", "which", "while", "with", "would"}
 
 
@@ -83,7 +82,7 @@ class Finding:
 def parse_frontmatter(text: str) -> tuple[dict[str, Any], int]:
     if not text.startswith("---\n"):
         return {}, 0
-    end = text.find("\n---\n", 4)
+    end = text.find("\n---\n", 3)
     if end < 0 and text.endswith("\n---"):
         end = len(text) - 4
     if end < 0:
@@ -115,14 +114,18 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], int]:
 
 def visible_lines(text: str, offset: int) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
-    fenced = False
+    fence = ""  # the opening fence run, e.g. "```" or "~~~~"; closed only by a run of the same char at least as long
     for number, raw in enumerate(text.splitlines(), 1):
         if number <= offset:
             continue
-        if raw.lstrip().startswith(("```", "~~~")):
-            fenced = not fenced
+        stripped = raw.strip()
+        if not fence and stripped.startswith(("```", "~~~")):
+            fence = stripped[0] * (len(stripped) - len(stripped.lstrip(stripped[0])))
             continue
-        if not fenced and raw.strip():
+        if fence and stripped.startswith(fence) and not stripped.strip(fence[0]):
+            fence = ""
+            continue
+        if not fence and stripped:
             out.append((number, raw.rstrip()))
     return out
 
@@ -156,7 +159,7 @@ def load_pages(vault: pathlib.Path) -> list[Page]:
 
 
 def claims(page: Page) -> list[tuple[int, str]]:
-    return [(n, s[:MAX_QUOTE_CHARS]) for n, s in page.lines if len(s.strip()) >= 28 and not s.lstrip().startswith(("#", ">")) and not LINK_RE.fullmatch(s.strip())][:10]
+    return [(n, s) for n, s in page.lines if len(s.strip()) >= 28 and not s.lstrip().startswith(("#", ">")) and not LINK_RE.fullmatch(s.strip())][:10]
 
 
 def words(text: str) -> set[str]:
@@ -238,15 +241,14 @@ def deterministic_findings(pages: list[Page]) -> list[Finding]:
     findings: list[Finding] = []
     for page in pages:
         for line, text in page.lines:
-            scan = CODE_SPAN_RE.sub("", text)
+            scan = CODE_SPAN_RE.sub(lambda m: " " * len(m.group()), text)  # mask, keep positions
             if MARKER_RE.search(scan):
                 findings.append(Finding("unresolved", page.path, line, text, "An unresolved marker remains in the page.", None, None))
             for link in LINK_RE.finditer(scan):
-                if link.start() and scan[link.start() - 1] == "!":
-                    continue
-                target = link.group(1).removesuffix(".md").strip("/").casefold()
+                target = link.group(1).strip("/").casefold()
                 if pathlib.PurePosixPath(target).suffix in ATTACHMENT_SUFFIXES:
                     continue
+                target = target.removesuffix(".md")
                 exists = target in qualified_names if "/" in target else target in bare_names
                 if not exists:
                     findings.append(Finding("missing-page", page.path, line, link.group(0), f"Target “{link.group(1)}” was not found among the scanned pages.", None, None))
