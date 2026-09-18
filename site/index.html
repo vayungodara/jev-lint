@@ -1,72 +1,294 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="jev-lint finds contradictions, stale claims, unresolved markers, and missing pages in Markdown knowledge bases.">
-  <meta name="theme-color" content="#efe7d8">
-  <title>jev-lint — semantic linting for your second brain</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,500;6..72,650&display=swap" rel="stylesheet">
-  <style>
-    :root{--paper:#efe7d8;--sheet:#f7f1e6;--ink:#20231f;--muted:#5c5e56;--rule:#bbb3a5;--red:#a83d29;--shadow:0 24px 60px rgba(44,38,29,.14)}
-    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font:500 19px/1.55 Newsreader,Georgia,serif}::selection{background:var(--red);color:#fff}a{color:inherit;text-underline-offset:4px;text-decoration-thickness:1px}a:focus-visible{outline:3px solid var(--red);outline-offset:4px}.mono,code,pre,.meta,.button{font-family:"IBM Plex Mono",monospace}.wrap{width:min(1180px,calc(100% - 40px));margin:auto}.hero{min-height:760px;background:linear-gradient(rgba(247,241,230,.78),rgba(247,241,230,.92)),url("paper.webp") center/cover;display:grid;align-items:center;border-bottom:1px solid var(--rule);position:relative;overflow:hidden}.nav{position:absolute;top:28px;left:20px;right:20px;display:flex;justify-content:space-between;align-items:center;font:500 14px "IBM Plex Mono",monospace}.nav a{text-decoration:none}.nav-links{display:flex;gap:24px}.hero-copy{padding:130px 0 90px;max-width:940px}.hero h1{font-size:clamp(4.4rem,13vw,10rem);line-height:.72;letter-spacing:-.04em;margin:0 0 38px;font-weight:650}.hero h1 span{display:block;font-size:.27em;line-height:1.05;letter-spacing:-.02em;margin:32px 0 0;max-width:18ch}.lede{max-width:57ch;color:var(--muted);font-size:1.25rem}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:34px}.button{font-size:14px;display:inline-block;padding:13px 18px;border:1px solid var(--ink);text-decoration:none;background:var(--ink);color:var(--sheet);transition:transform .2s ease-out}.button:hover{transform:translateY(-2px)}.button.secondary{background:transparent;color:var(--ink)}main{background:var(--sheet)}section{padding:100px 0;border-bottom:1px solid var(--rule)}.split{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:8vw;align-items:start}h2{font-size:clamp(2.8rem,6vw,5.5rem);line-height:.92;letter-spacing:-.03em;margin:0}h3{font-size:1.5rem;margin:0 0 8px}.section-copy{max-width:65ch;color:var(--muted);margin-top:28px}.terminal{background:#1c201c;color:#e8e3d8;padding:26px;box-shadow:var(--shadow);font:400 clamp(.8rem,1.5vw,1rem)/1.75 "IBM Plex Mono",monospace;overflow:auto;border-radius:2px}.prompt{color:#ef8469}.ok{color:#88b69b}.dim{color:#b1b3aa}.checks{border-top:1px solid var(--rule)}.check{display:grid;grid-template-columns:130px 1fr;gap:28px;padding:28px 0;border-bottom:1px solid var(--rule)}.check .mono{font-size:.72rem;text-transform:uppercase;color:var(--red);letter-spacing:.04em}.finding{margin-top:40px;border-top:1px solid var(--red);padding-top:22px}.finding blockquote{font-size:1.35rem;margin:20px 0;padding-left:22px;border-left:1px solid var(--rule)}.finding .versus{color:var(--red);font:500 .75rem "IBM Plex Mono",monospace}.numbers{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--rule);margin-top:44px}.number{padding:24px 18px 24px 0;border-bottom:1px solid var(--rule)}.number strong{display:block;font-size:2rem;font-weight:650}.number span{font:400 .7rem "IBM Plex Mono",monospace;color:var(--muted);text-transform:uppercase}.install{background:var(--ink);color:var(--sheet)}.install .section-copy{color:#c3c4bd}.install pre{border-top:1px solid #5d615a;border-bottom:1px solid #5d615a;padding:24px 0;font-size:clamp(.8rem,2vw,1.05rem);white-space:pre-wrap;overflow-wrap:anywhere}.install a{color:#ef8469}footer{padding:30px 0;background:var(--ink);color:#c3c4bd;font:400 .75rem "IBM Plex Mono",monospace}.footer-row{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}@media(max-width:760px){body{font-size:17px}.wrap{width:min(100% - 28px,1180px)}.nav{left:14px;right:14px}.nav-links{gap:14px}.hero{min-height:720px}.hero h1{font-size:5.4rem}.split{grid-template-columns:1fr;gap:48px}section{padding:70px 0}.check{grid-template-columns:1fr;gap:6px}.numbers{grid-template-columns:repeat(2,1fr)}.number:last-child{grid-column:1/-1}}
-    @media(prefers-reduced-motion:no-preference){.hero-copy{animation:reveal .7s cubic-bezier(.16,1,.3,1) both}@keyframes reveal{from{opacity:.01;transform:translateY(20px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="jev-lint finds contradictions, stale claims, unresolved markers, and missing pages in Markdown knowledge bases, and shows the exact evidence.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#efe7d8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1b1a17" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="jev-lint — semantic linting for your second brain">
+<meta property="og:description" content="Find the claims your second brain forgot to question. Contradictions, stale claims, unresolved markers, missing pages, each with the exact evidence.">
+<meta property="og:image" content="https://jevlint.vayun.net/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<title>jev-lint — semantic linting for your second brain</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='2' width='24' height='28' rx='2' fill='%23f7f1e6' stroke='%2320231f' stroke-width='2'/%3E%3Cpath d='M9 10h14M9 22h10' stroke='%23bbb3a5' stroke-width='2'/%3E%3Cpath d='M9 16h14' stroke='%23a83d29' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/literata-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/courier-prime-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:Literata;font-style:normal;font-weight:200 900;font-display:swap;src:url(fonts/literata-latin.woff2) format("woff2")}
+@font-face{font-family:Literata;font-style:italic;font-weight:200 900;font-display:swap;src:url(fonts/literata-italic-latin.woff2) format("woff2")}
+@font-face{font-family:"Courier Prime";font-style:normal;font-weight:400;font-display:swap;src:url(fonts/courier-prime-latin.woff2) format("woff2")}
+@font-face{font-family:"Courier Prime";font-style:normal;font-weight:700;font-display:swap;src:url(fonts/courier-prime-bold-latin.woff2) format("woff2")}
+
+:root{
+  --paper:#efe7d8;--sheet:#f7f1e6;--card:#fcf9f2;--ink:#20231f;--muted:#5c5e56;--rule:#bbb3a5;--rule-soft:#d9d2c3;
+  --red:#a83d29;--hl:#f2d15a;--hl-band:#f2d15a;--hl-ink:#5a4a10;--link-inv:#ef8469;
+  --term:#1c201c;--term-ink:#e8e3d8;--term-dim:#a7a99f;--term-red:#ef8469;--term-green:#88b69b;
+  --shadow:0 18px 40px -18px rgba(44,38,29,.35),0 2px 6px rgba(44,38,29,.08);
+  --grain:.55;--ease:cubic-bezier(.16,1,.3,1);
+  --serif:Literata,"Iowan Old Style",Georgia,serif;--mono:"Courier Prime","Courier New",Courier,monospace;
+}
+@media(prefers-color-scheme:dark){:root{
+  --paper:#1b1a17;--sheet:#232220;--card:#2a2926;--ink:#ece6d8;--muted:#a39d90;--rule:#3d3a34;--rule-soft:#2e2c28;
+  --red:#e0705a;--hl:#e3c34f;--hl-band:rgba(227,195,79,.32);--hl-ink:#1b1a17;--link-inv:#a83d29;
+  --term:#121311;--term-ink:#e8e3d8;--term-dim:#8f9187;--term-red:#ef8469;--term-green:#88b69b;
+  --shadow:0 22px 44px -18px rgba(0,0,0,.7),0 2px 6px rgba(0,0,0,.3);--grain:.08}}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scrollbar-color:var(--rule) var(--paper);accent-color:var(--red);caret-color:var(--red)}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 19px/1.55 var(--serif);font-optical-sizing:auto;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:var(--red);color:var(--sheet)}
+a{color:inherit;text-decoration-thickness:1px;text-underline-offset:.22em;transition:text-decoration-thickness .15s}
+a:hover{text-decoration-thickness:2px}
+:focus-visible{outline:3px solid var(--red);outline-offset:4px;border-radius:2px}
+.install :focus-visible,footer :focus-visible{outline-color:var(--link-inv)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);margin:0}
+code,pre,.mono,.button,.label{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.mono{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.wrap{width:min(1180px,100% - 40px);margin-inline:auto}
+h1,h2,h3{font-weight:700;letter-spacing:-.025em;text-wrap:balance;margin:0;font-variation-settings:"opsz" 72}
+h2{font-size:clamp(2.2rem,4.6vw,3.6rem);line-height:1.02}
+h3{font-size:1.35rem;line-height:1.2;margin-bottom:6px;letter-spacing:-.01em}
+p{margin:0 0 1em}
+.copy{max-width:62ch;color:var(--muted)}
+
+/* nav */
+.nav{display:flex;justify-content:space-between;align-items:baseline;padding:26px 0;font-family:var(--mono);font-size:14px;white-space:nowrap}
+.nav a{text-decoration:none}
+.nav a:hover{text-decoration:underline;text-decoration-thickness:1px}
+.nav-links{display:flex;gap:26px}
+.wordmark{font-weight:700;letter-spacing:0}
+
+/* hero */
+.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--rule)}
+.hero::before{content:"";position:absolute;inset:0;background:url(paper.webp) center/cover;opacity:var(--grain);mix-blend-mode:multiply;pointer-events:none}
+@media(prefers-color-scheme:dark){.hero::before{mix-blend-mode:screen;filter:invert(1) contrast(1.4)}.figure img{filter:brightness(.9)}}
+.hero>.wrap{position:relative}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr);gap:5vw;align-items:center;padding:56px 0 88px}
+.hero h1{font-size:clamp(2.8rem,5vw,4.6rem);line-height:.98;letter-spacing:-.03em;margin-bottom:28px}
+.hero h1 .nb{white-space:nowrap}
+.hero h1 em{font-style:italic;font-weight:600;color:var(--red)}
+.lede{font-size:1.2rem;max-width:52ch}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:32px}
+.button{font-size:14px;padding:13px 18px;border:1px solid var(--ink);background:var(--ink);color:var(--paper);text-decoration:none;display:inline-flex;align-items:center;gap:10px;transition:transform .35s var(--ease),box-shadow .35s var(--ease)}
+.button:hover{transform:translateY(-2px);box-shadow:0 10px 24px -12px rgba(0,0,0,.4)}
+.button.secondary{background:transparent;color:var(--ink)}
+.figure{margin:0;justify-self:center;width:min(100%,560px);text-align:center}
+.figure img{width:100%;height:auto;display:block;transition:transform .6s var(--ease)}
+.figure:hover img{transform:translateY(-6px) rotate(-.6deg)}
+.figure figcaption{font:400 13px/1.5 var(--mono);color:var(--muted);margin-top:8px}
+
+/* sections */
+main{background:var(--sheet)}
+section{padding:96px 0;border-bottom:1px solid var(--rule)}
+.split{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:6vw;align-items:start}
+.split .copy{margin-top:26px}
+
+/* run log */
+.log{margin:0;background:var(--term);color:var(--term-ink);padding:28px 30px;box-shadow:var(--shadow);font:400 clamp(.82rem,1.45vw,1rem)/1.8 var(--mono);overflow:auto;border-radius:3px;white-space:pre}
+.log .p{color:var(--term-red)}.log .d{color:var(--term-dim)}.log .g{color:var(--term-green)}.log b{font-weight:700;color:#fff}
+.footnote{font:400 14px/1.5 var(--mono);color:var(--muted);margin-top:16px}
+
+/* checks */
+.checks{margin:0;padding:0;list-style:none;border-top:1px solid var(--rule)}
+.checks li{display:grid;grid-template-columns:120px 1fr;gap:28px;padding:26px 0;border-bottom:1px solid var(--rule);transition:padding-left .3s var(--ease)}
+.checks li:hover{padding-left:6px}
+.checks .label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding-top:6px}
+.checks .jev{color:var(--red)}
+.checks p{margin:0;color:var(--muted)}
+.checks code{font-size:.9em;background:var(--paper);padding:1px 5px}
+
+/* finding card */
+.finding{background:var(--card);box-shadow:var(--shadow);border-radius:3px;padding:0;position:relative}
+.finding summary{list-style:none;cursor:pointer;padding:22px 26px;display:grid;grid-template-columns:1fr auto;gap:8px 20px;align-items:baseline;transition:background .3s}
+.finding:not([open]) summary:hover{background:color-mix(in srgb,var(--hl) 14%,transparent)}
+.finding summary small{font-weight:400;color:var(--muted);letter-spacing:0;text-transform:none;font-size:13px}
+.finding summary::-webkit-details-marker{display:none}
+.finding summary:focus-visible{outline-offset:-4px}
+.finding summary .kind{font:700 13px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--red)}
+.finding summary .prob{font:400 13px/1.4 var(--mono);color:var(--muted);text-align:right}
+.finding summary .loc{grid-column:1/-1;font:400 14px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.finding summary .hint{grid-column:1/-1;font:400 13px/1.4 var(--mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.finding summary .hint::before{content:"+ ";}
+.finding[open] summary .hint::before{content:"– "}
+.finding[open] summary{border-bottom:1px solid var(--rule)}
+.finding .body{padding:22px 26px 26px}
+.finding blockquote{margin:0;padding:0 0 0 20px;border-left:1px solid var(--rule);font-size:1.3rem;line-height:1.35;font-style:italic;font-variation-settings:"opsz" 24}
+.finding blockquote mark{background:linear-gradient(transparent 55%,var(--hl-band) 55%,var(--hl-band) 92%,transparent 92%);color:inherit;padding:0 .1em}
+.finding .src{font:400 13px/1.5 var(--mono);color:var(--muted);margin:8px 0 22px 20px}
+.finding .versus{color:var(--red);font:700 12px/1 var(--mono);letter-spacing:.1em;margin:0 0 20px 20px}
+.bar{height:6px;background:var(--rule-soft);margin:24px 0 8px;overflow:hidden}
+.bar i{display:block;height:100%;width:var(--w);background:var(--hl);transform-origin:left;transition:transform .7s var(--ease)}
+.finding:not([open]) .bar i{transform:scaleX(0)}
+.finding .verify{font-size:1rem;color:var(--muted);margin:0}
+.finding .note{font:400 13px/1.5 var(--mono);color:var(--muted);margin:18px 0 0}
+
+/* install */
+.install{background:var(--ink);color:var(--paper);border-bottom:0}
+.install .copy{color:color-mix(in srgb,var(--paper) 72%,transparent)}
+.install h2{color:var(--paper)}
+.cmd{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border-top:1px solid color-mix(in srgb,var(--paper) 30%,transparent);border-bottom:1px solid color-mix(in srgb,var(--paper) 30%,transparent);padding:18px 0}
+.cmd pre{margin:0;font-size:clamp(.82rem,1.6vw,1.02rem);line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.cmd pre .d{opacity:.7}
+.copybtn{font:700 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;background:transparent;color:var(--paper);border:1px solid color-mix(in srgb,var(--paper) 45%,transparent);padding:10px 12px;cursor:pointer;min-width:84px;transition:border-color .2s,transform .35s var(--ease)}
+.copybtn:hover{border-color:var(--paper);transform:translateY(-1px)}
+.copybtn[data-done]{border-color:var(--hl);box-shadow:inset 0 0 0 1px var(--hl)}
+.install .more{margin-top:22px;font-family:var(--mono);font-size:14px}
+.install a{color:var(--link-inv)}
+.install-note{margin-top:20px;font-size:.95rem}
+
+footer{padding:34px 0;background:var(--ink);color:color-mix(in srgb,var(--paper) 70%,transparent);font:400 13px/1.6 var(--mono)}
+.footer-row{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;border-top:1px solid color-mix(in srgb,var(--paper) 25%,transparent);padding-top:26px}
+
+/* motion */
+@media(prefers-reduced-motion:no-preference){
+  .hero-copy{animation:reveal .7s var(--ease) both}
+  .figure{animation:settle .9s var(--ease) both}
+  @keyframes reveal{from{opacity:.01;transform:translateY(20px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+  @keyframes settle{from{transform:translateY(18px) rotate(-1deg)}to{transform:none}}
+  @supports(animation-timeline:view()){
+    .rise{animation:rise linear both;animation-timeline:view();animation-range:entry 0% entry 35%}
+    @keyframes rise{from{opacity:.001;transform:translateY(22px)}to{opacity:1;transform:none}}
+  }
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:0s!important;animation:none!important}html{scroll-behavior:auto}.finding:not([open]) .bar i{transform:none}.button:hover,.copybtn:hover,.figure:hover img{transform:none}.checks li:hover{padding-left:0}}
+
+@media(max-width:800px){
+  body{font-size:17px}
+  .wrap{width:min(100% - 28px,1180px)}
+  .nav{padding:18px 0;font-size:13px}.nav-links{gap:16px}.version{display:none}
+  .hero-grid{grid-template-columns:1fr;gap:28px;padding:24px 0 64px}
+  .figure{order:-1;width:min(100%,340px)}
+  .hero h1{font-size:clamp(2.5rem,11vw,3.6rem)}
+  .lede{font-size:1.08rem}
+  .split{grid-template-columns:1fr;gap:36px}
+  section{padding:64px 0}
+  .checks li{grid-template-columns:1fr;gap:6px}
+  .finding summary{padding:18px}.finding .body{padding:18px}
+  .finding blockquote{font-size:1.12rem}
+  .cmd{grid-template-columns:1fr}.copybtn{justify-self:start}
+}
+</style>
 </head>
 <body>
-  <header class="hero">
-    <div class="wrap">
-      <nav class="nav" aria-label="Main navigation"><a href="#top" class="mono">jev-lint / 0.1.0</a><div class="nav-links"><a href="#how">How it works</a><a href="https://github.com/vayungodara/jev-lint">GitHub</a></div></nav>
-      <div class="hero-copy" id="top">
-        <h1>jev-lint<span>Find the claims your second brain forgot to question.</span></h1>
-        <p class="lede">A cost-capped linter for Obsidian vaults and Markdown wikis. It finds possible contradictions, dated claims, unresolved markers, and missing pages—then shows the exact evidence.</p>
+<header class="hero">
+  <div class="wrap">
+    <nav class="nav" aria-label="Main">
+      <a href="#top" class="wordmark">jev-lint<span class="version"> <span aria-hidden="true">/</span> 0.1.0</span></a>
+      <div class="nav-links"><a href="#how">How it works</a><a href="#install">Install</a><a href="https://github.com/vayungodara/jev-lint">GitHub</a></div>
+    </nav>
+    <div class="hero-grid" id="top">
+      <div class="hero-copy">
+        <h1>Find the claims your <span class="nb">second brain</span> <em>forgot to question.</em></h1>
+        <p class="lede copy">A cost-capped linter for Obsidian vaults and Markdown wikis. It finds possible contradictions, dated claims, unresolved markers, and missing pages, then shows the exact quote it scored, both lines for a contradiction, and how sure it is.</p>
         <div class="actions"><a class="button" href="#install">Install with pipx</a><a class="button secondary" href="https://github.com/vayungodara/jev-lint">Read the source</a></div>
       </div>
+      <figure class="figure">
+        <picture>
+          <source media="(max-width:800px)" srcset="hero-sm.webp">
+          <img src="hero.webp" width="904" height="726" fetchpriority="high" decoding="async" alt="A stack of note pages. The top page has a line struck through in red; its corner is folded back to reveal the same line highlighted in yellow on the page beneath.">
+        </picture>
+        <figcaption>One page lifted. The line it disagrees with, underneath.</figcaption>
+      </figure>
     </div>
-  </header>
-  <main>
-    <section>
-      <div class="wrap split">
-        <div><h2>Lint before lore hardens.</h2><p class="section-copy">Regex catches broken syntax. jev-lint adds a narrow semantic pass for claims that disagree or age badly, using TypeSafe Jev as a second opinion—not a hidden editor.</p></div>
-        <pre class="terminal"><span class="prompt">$</span> jev-lint ~/vault
+  </div>
+</header>
 
-<span class="dim">99 pages · 1,267 Jev questions</span>
-<span class="prompt">possible contradiction</span>
-  wiki/decisions/agent-routing.md:18
-<span class="ok">possibly stale claim</span>
-  wiki/decisions/network-guard.md:14
+<main>
+  <section>
+    <div class="wrap split">
+      <div class="rise"><h2>Lint before lore hardens.</h2><p class="copy">Regex catches broken syntax. jev-lint adds a narrow semantic pass for claims that disagree or age badly, using TypeSafe Jev as a second opinion, not a hidden editor. Your vault is never edited; you get one <code>report.html</code>.</p></div>
+      <div class="rise">
+<pre class="log" aria-label="Summary of a real run"><span class="p">$</span> jev-lint ~/brain
 
-<span class="dim">113.9s · 16 findings · $0.0243</span></pre>
+<span class="d">scanned</span>      <b>99</b> pages
+<span class="d">asked</span>     <b>1,267</b> Jev questions
+<span class="d">found</span>        <b>16</b> findings
+             <span class="p">2</span> possible contradictions
+             <span class="p">1</span> possibly stale claim
+             <span class="g">1</span> missing page
+            <span class="g">12</span> unresolved markers
+
+<span class="d">took</span>        <b>114</b> s
+<span class="d">cost</span>     <b>$0.024</b> input tokens
+<span class="d">wrote</span>    report.html</pre>
+        <p class="footnote">One vault, one run, 17 September 2026: the owner's own 99-page wiki. Numbers describe that run, not a benchmark.</p>
       </div>
-    </section>
-    <section id="how">
-      <div class="wrap split">
-        <div><h2>Four checks.<br>Two kinds of evidence.</h2></div>
-        <div class="checks">
-          <div class="check"><span class="mono">Jev signal</span><div><h3>Possible contradictions</h3><p>Compares exact claim pairs from linked or strongly overlapping pages.</p></div></div>
-          <div class="check"><span class="mono">Jev signal</span><div><h3>Possibly stale claims</h3><p>Scores dated statements that may need a current source.</p></div></div>
-          <div class="check"><span class="mono">Rule check</span><div><h3>Unresolved markers</h3><p>Finds TODO, FIXME, <code>[?]</code>, and explicit unresolved comments.</p></div></div>
-          <div class="check"><span class="mono">Rule check</span><div><h3>Missing pages</h3><p>Resolves Obsidian wikilinks against scanned paths, titles, and aliases.</p></div></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap split">
+      <div class="rise"><h2>Four checks. Two kinds of evidence.</h2><p class="copy">Rule checks run locally and are exact. Jev signals send only the selected claim text and come back with a probability. The report never mixes the two.</p></div>
+      <ul class="checks rise">
+        <li><span class="label jev">Jev signal</span><div><h3>Possible contradictions</h3><p>Compares exact claim pairs from linked or strongly overlapping pages.</p></div></li>
+        <li><span class="label jev">Jev signal</span><div><h3>Possibly stale claims</h3><p>Scores dated statements that may need a current source.</p></div></li>
+        <li><span class="label">Rule check</span><div><h3>Unresolved markers</h3><p>Finds TODO, FIXME, <code>[?]</code>, and explicit unresolved comments.</p></div></li>
+        <li><span class="label">Rule check</span><div><h3>Missing pages</h3><p>Resolves Obsidian wikilinks against scanned paths, titles, and aliases.</p></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap split">
+      <div class="rise"><h2>Evidence, not vibes.</h2><p class="copy">Every semantic flag is tied to the quote Jev actually scored. Open a contradiction and you get both lines, where they live, and the probability, so you can decide, not the model.</p></div>
+      <details class="finding rise" id="finding">
+        <summary>
+          <span class="kind">Possible contradiction <small>· from the run above</small></span>
+          <span class="prob">Jev probability 84%</span>
+          <span class="loc">wiki/concepts/compiled-vs-retrieved-knowledge.md:22 ↔ wiki/concepts/llm-wiki-pattern.md:19</span>
+          <span class="hint">Show both lines</span>
+        </summary>
+        <div class="body">
+          <blockquote>“get noted. Knowledge is <mark>compiled once and then kept current</mark> rather than”</blockquote>
+          <p class="src">compiled-vs-retrieved-knowledge.md, line 22</p>
+          <p class="versus">VERSUS</p>
+          <blockquote>“and it is meant to be <mark>co-evolved rather than written once</mark>.”</blockquote>
+          <p class="src">llm-wiki-pattern.md, line 19</p>
+          <div class="bar" role="img" aria-label="Probability 84 percent"><i style="--w:84%"></i></div>
+          <p class="verify">Verify scope and dates before changing either note. A flag is a prompt to read the sources, not permission to rewrite one.</p>
+          <p class="note">The exact lines Jev scored in the 17 September run, fragments and all. The report lists findings per page with probability and confidence.</p>
         </div>
-      </div>
-    </section>
-    <section>
-      <div class="wrap split">
-        <div><h2>Evidence, not vibes.</h2><p class="section-copy">Every semantic flag is tied to the quote Jev actually scored. The report keeps rule checks separate from model probabilities and makes its sampling limits explicit.</p></div>
-        <div class="finding"><div class="meta"><span>POSSIBLE CONTRADICTION</span><span>Jev probability 91%</span></div><blockquote>“The Atlas platform serves every API request from Amsterdam.”</blockquote><div class="versus">VERSUS</div><blockquote>“The Atlas platform serves every API request from Frankfurt.”</blockquote><p>Verify scope and dates before changing either note.</p></div>
-      </div>
-    </section>
-    <section>
-      <div class="wrap"><h2>A real vault, one bounded pass.</h2><div class="numbers"><div class="number"><strong>99</strong><span>pages</span></div><div class="number"><strong>1,267</strong><span>questions</span></div><div class="number"><strong>113.9</strong><span>seconds</span></div><div class="number"><strong>16</strong><span>findings</span></div><div class="number"><strong>$0.0243</strong><span>input cost</span></div></div><p class="section-copy">Measured on a personal Markdown knowledge base on 17 September 2026. See the README for scope and limitations.</p></div>
-    </section>
-    <section class="install" id="install">
-      <div class="wrap split"><div><h2>Run it where your notes live.</h2><p class="section-copy">Python 3.11+. Your vault remains local; only selected claim text is sent for semantic scoring.</p></div><div><pre>pipx install git+https://github.com/vayungodara/jev-lint
+      </details>
+    </div>
+  </section>
+
+  <section class="install" id="install">
+    <div class="wrap split">
+      <div class="rise"><h2>Run it where your notes live.</h2><p class="copy">Python 3.11+. Your notes are never edited. Semantic checks send selected claims to TypeSafe Jev; stale-claim checks also send the page title and its dates. The default budget is $1.00, and a run is refused before any API call if the estimate exceeds it.</p></div>
+      <div class="rise">
+        <div class="cmd">
+<pre id="cmd">pipx install git+https://github.com/vayungodara/jev-lint
+<span class="d"># or: uv tool install git+https://github.com/vayungodara/jev-lint</span>
 jev-lint ~/path/to/vault --dry-run
-jev-lint ~/path/to/vault --open</pre><p><a href="https://github.com/vayungodara/jev-lint#readme">Installation, limits, and cost model →</a></p></div></div>
-    </section>
-  </main>
-  <footer><div class="wrap footer-row"><span>MIT licensed · built with TypeSafe Jev</span><span>Agents wrote most of this.</span></div></footer>
+jev-lint ~/path/to/vault --open</pre>
+          <button class="copybtn" type="button" data-copy="pipx install git+https://github.com/vayungodara/jev-lint" aria-label="Copy the pipx install command">Copy</button>
+        </div>
+        <p class="sr" role="status" id="copystatus"></p>
+        <p class="more"><a href="https://github.com/vayungodara/jev-lint#readme">Installation, limits, and cost model →</a></p>
+        <p class="install-note copy">Set <code>TYPESAFE_API_KEY</code> first. <code>--dry-run</code> prints the question count and cost estimate without a single network call.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap footer-row">
+    <span>MIT licensed · built with <a href="https://typesafe.ai/">TypeSafe Jev</a> · <a href="https://x.com/vayungodara/status/2100706477757321621">launch post</a></span>
+    <span>Agents wrote most of the code and this page. Vayun directed it and owns the decisions.</span>
+  </div>
+</footer>
+
+<script>
+document.querySelector('.copybtn').addEventListener('click',async e=>{
+  const b=e.currentTarget,s=document.getElementById('copystatus');
+  try{await navigator.clipboard.writeText(b.dataset.copy);b.textContent='Copied';b.dataset.done=1;s.textContent='Install command copied'}
+  catch{b.textContent='Select it';s.textContent='Copy failed; select the install command manually'}
+  setTimeout(()=>{b.textContent='Copy';delete b.dataset.done},1500);
+});
+</script>
 </body>
 </html>
