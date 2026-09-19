@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import datetime as dt
+import functools
 import hashlib
 import html
 import json
@@ -12,6 +13,7 @@ import re
 import math
 import ssl
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -22,14 +24,20 @@ from typing import Any, Callable
 
 import certifi
 
+from jev_lint import __version__
+
 API = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
 PRICE_PER_INPUT_TOKEN = 0.042 / 1_000_000
 DEFAULT_BUDGET = 1.0
-LINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
+# Obsidian: [[page]], [[page#heading]], [[page|alias]], and [[page\|alias]] inside tables.
+LINK_RE = re.compile(r"\[\[([^\]|#\\]+)(?:#[^\]|\\]+)?(?:\\?\|[^\]]+)?\]\]")
+BACKTICK_RUN_RE = re.compile(r"(?<!\\)`+")
 DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2}|20\d{2})\b")
 MARKER_RE = re.compile(r"(?:\bTODO\b|\bFIXME\b|\[\?\]|<!--\s*unresolved\s*-->)", re.I)
 WORD_RE = re.compile(r"[a-z][a-z0-9-]{2,}", re.I)
+# Obsidian's accepted non-Markdown formats; a [[link]] to one is an attachment, not a missing page.
+ATTACHMENT_SUFFIXES = {".canvas", ".base", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp", ".avif", ".mp3", ".wav", ".m4a", ".3gp", ".flac", ".ogg", ".mp4", ".webm", ".ogv", ".mov", ".mkv"}
 STOP = {"about", "after", "also", "been", "being", "between", "could", "from", "have", "into", "more", "only", "other", "should", "than", "that", "their", "there", "these", "this", "those", "through", "under", "using", "when", "where", "which", "while", "with", "would"}
 
 
@@ -65,7 +73,7 @@ class Finding:
     line: int
     quote: str
     why: str
-    probability: float
+    probability: float | None  # None for rule checks: Jev did not score them
     confidence: float | None
     other_path: str | None = None
     other_line: int | None = None
@@ -75,7 +83,9 @@ class Finding:
 def parse_frontmatter(text: str) -> tuple[dict[str, Any], int]:
     if not text.startswith("---\n"):
         return {}, 0
-    end = text.find("\n---\n", 4)
+    end = text.find("\n---\n", 3)
+    if end < 0 and text.endswith("\n---"):
+        end = len(text) - 4
     if end < 0:
         return {}, 0
     data: dict[str, Any] = {}
@@ -83,7 +93,8 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], int]:
     for raw in text[4:end].splitlines():
         stripped = raw.lstrip()
         if stripped.startswith("- ") and current:
-            data.setdefault(current, []).append(stripped[2:].strip().strip('"\''))
+            if isinstance(data.get(current), list):
+                data[current].append(stripped[2:].strip().strip('"\''))
             continue
         if ":" not in raw:
             continue
@@ -99,21 +110,44 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], int]:
             data[current] = value.strip('"\'')
         else:
             data[current] = []
-    return data, text[: end + 5].count("\n")
+    return data, text[: end + 1].count("\n") + 1  # line number of the closing ---
 
 
 def visible_lines(text: str, offset: int) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
-    fenced = False
+    fence = ""  # the opening fence run, e.g. "```" or "~~~~"; closed only by a run of the same char at least as long
     for number, raw in enumerate(text.splitlines(), 1):
         if number <= offset:
             continue
-        if raw.lstrip().startswith("```"):
-            fenced = not fenced
+        stripped = raw.strip()
+        indented = len(raw) - len(raw.lstrip(" ")) > 3  # four spaces make it indented code, never a fence
+        if not fence and not indented and stripped.startswith(("```", "~~~")):
+            run = stripped[0] * (len(stripped) - len(stripped.lstrip(stripped[0])))
+            if not (run[0] == "`" and "`" in stripped[len(run):]):  # ```x``` is an inline span, not a fence
+                fence = run
+                continue
+        if fence and not indented and stripped.startswith(fence) and not stripped.strip(fence[0]):
+            fence = ""
             continue
-        if not fenced and raw.strip():
+        if not fence and stripped:
             out.append((number, raw.rstrip()))
     return out
+
+
+def mask_code_spans(line: str) -> str:
+    """Replace inline code spans with spaces so positions stay aligned with the source line."""
+    runs = [(m.start(), m.end()) for m in BACKTICK_RUN_RE.finditer(line)]
+    out = list(line)
+    i = 0
+    while i < len(runs):
+        start, end = runs[i]
+        close = next((j for j in range(i + 1, len(runs)) if runs[j][1] - runs[j][0] == end - start), None)
+        if close is None:
+            i += 1
+            continue
+        out[start:runs[close][1]] = " " * (runs[close][1] - start)
+        i = close + 1
+    return "".join(out)
 
 
 def load_pages(vault: pathlib.Path) -> list[Page]:
@@ -125,7 +159,7 @@ def load_pages(vault: pathlib.Path) -> list[Page]:
             continue
         if path.is_symlink() or not path.resolve().is_relative_to(root):
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
         fm, offset = parse_frontmatter(text)
         aliases = fm.get("aliases", [])
         if isinstance(aliases, str):
@@ -133,7 +167,7 @@ def load_pages(vault: pathlib.Path) -> list[Page]:
         related = [m.group(1) for m in LINK_RE.finditer(str(fm.get("related", "")))]
         up_match = LINK_RE.search(str(fm.get("up", "")))
         pages.append(Page(
-            path=str(path.relative_to(vault)),
+            path=path.relative_to(vault).as_posix(),
             title=str(fm.get("title") or path.stem.replace("-", " ").title()),
             aliases=[str(a) for a in aliases],
             up=up_match.group(1) if up_match else None,
@@ -161,52 +195,58 @@ def linked_names(page: Page) -> set[str]:
     return {n.casefold() for n in names}
 
 
+def page_names(page: Page) -> set[str]:
+    return {pathlib.PurePosixPath(page.path).stem.casefold(), page.title.casefold(), *(x.casefold() for x in page.aliases)}
+
+
 def build_questions(pages: list[Page]) -> list[Question]:
     questions: list[Question] = []
-    for page in pages:
-        page_claims = claims(page)
-        for line, quote in page_claims:
-            date = DATE_RE.search(quote)
-            old_page = False
-            if page.updated:
-                try:
-                    old_page = (dt.date.today() - dt.date.fromisoformat(page.updated[:10])).days > 180
-                except ValueError:
-                    pass
-            if not date and not old_page:
+    today = dt.date.today()
+    page_claims = [[(n, q, words(q)) for n, q in claims(p)] for p in pages]
+    for page, page_cl in zip(pages, page_claims):
+        old_page = False
+        if page.updated:
+            try:
+                old_page = (today - dt.date.fromisoformat(page.updated[:10])).days > 180
+            except ValueError:
+                pass
+        for line, quote, _ in page_cl:
+            if not DATE_RE.search(quote) and not old_page:
                 continue
-            state = {"page": page.title, "updated": page.updated, "claim": quote, "today": dt.date.today().isoformat()}
+            state = {"page": page.title, "updated": page.updated, "claim": quote, "today": today.isoformat()}
             questions.append(Question(
                 id=f"stale-{len(questions)}", kind="stale", state=state,
                 spec={"type": "score", "instructions": "Is this dated claim likely stale as of `today`? Judge the claim, not merely the age of the page.", "criteria": ["Current or not time-sensitive", "May have changed and needs verification", "Clearly outdated or superseded"]},
                 path=page.path, line=line, quote=quote,
             ))
 
+    by_name: dict[str, set[int]] = {}
+    for i, p in enumerate(pages):
+        for name in page_names(p):
+            by_name.setdefault(name, set()).add(i)
+    linked = [set().union(*(by_name.get(n, set()) for n in linked_names(p))) for p in pages]
+    page_words = [set().union(*(w for _, _, w in cl)) for cl in page_claims]
     for i, a in enumerate(pages):
-        a_claims = claims(a)
-        if not a_claims:
+        if not page_claims[i]:
             continue
-        a_names = {pathlib.Path(a.path).stem.casefold(), a.title.casefold(), *(x.casefold() for x in a.aliases)}
-        for b in pages[i + 1:]:
-            b_claims = claims(b)
-            if not b_claims:
+        for j in range(i + 1, len(pages)):
+            b = pages[j]
+            if not page_claims[j]:
                 continue
-            b_names = {pathlib.Path(b.path).stem.casefold(), b.title.casefold(), *(x.casefold() for x in b.aliases)}
-            explicit = bool(linked_names(a) & b_names or linked_names(b) & a_names or (a.up and a.up == b.up))
-            ranked: list[tuple[int, int, str, int, str]] = []
-            for an, aq in a_claims:
-                aw = words(aq)
-                for bn, bq in b_claims:
-                    overlap = len(aw & words(bq))
-                    if (explicit and overlap >= 1) or overlap >= 6:
-                        ranked.append((overlap, an, aq, bn, bq))
-            for _, an, aq, bn, bq in sorted(ranked, reverse=True)[:1]:
-                state = {"quote_a": aq, "quote_b": bq}
-                questions.append(Question(
-                    id=f"contradiction-{len(questions)}", kind="contradiction", state=state,
-                    spec={"type": "noul", "instructions": "Do `quote_a` and `quote_b` make incompatible factual claims about the same thing?", "criteria": {"true": "Both cannot be true in the same scope and time", "false": "They agree, discuss different things, or can both be true"}},
-                    path=a.path, line=an, quote=aq, other_path=b.path, other_line=bn, other_quote=bq,
-                ))
+            explicit = j in linked[i] or i in linked[j] or bool(a.up and a.up == b.up)
+            needed = 1 if explicit else 6
+            if len(page_words[i] & page_words[j]) < needed:
+                continue
+            ranked = [(overlap, an, aq, bn, bq) for an, aq, aw in page_claims[i] for bn, bq, bw in page_claims[j] if (overlap := len(aw & bw)) >= needed]
+            if not ranked:
+                continue
+            _, an, aq, bn, bq = max(ranked)
+            state = {"quote_a": aq, "quote_b": bq}
+            questions.append(Question(
+                id=f"contradiction-{len(questions)}", kind="contradiction", state=state,
+                spec={"type": "noul", "instructions": "Do `quote_a` and `quote_b` make incompatible factual claims about the same thing?", "criteria": {"true": "Both cannot be true in the same scope and time", "false": "They agree, discuss different things, or can both be true"}},
+                path=a.path, line=an, quote=aq, other_path=b.path, other_line=bn, other_quote=bq,
+            ))
     return questions
 
 
@@ -214,21 +254,24 @@ def deterministic_findings(pages: list[Page]) -> list[Finding]:
     bare_names: set[str] = set()
     qualified_names: set[str] = set()
     for p in pages:
-        path = pathlib.PurePosixPath(p.path)
-        qualified_names.add(str(path.with_suffix("")).casefold())
-        bare_names.update({path.stem.casefold(), p.title.casefold(), *(a.casefold() for a in p.aliases)})
+        parts = pathlib.PurePosixPath(p.path).with_suffix("").parts
+        # Obsidian links use the shortest unique path, so every folder suffix resolves.
+        qualified_names.update("/".join(parts[k:]).casefold() for k in range(len(parts) - 1))
+        bare_names.update(page_names(p))
     findings: list[Finding] = []
     for page in pages:
         for line, text in page.lines:
-            if MARKER_RE.search(text):
-                findings.append(Finding("unresolved", page.path, line, text, "An unresolved marker remains in the page.", 1.0, 1.0))
-            for link in LINK_RE.finditer(text):
-                if link.start() and text[link.start() - 1] == "!":
+            scan = mask_code_spans(text)
+            if MARKER_RE.search(scan):
+                findings.append(Finding("unresolved", page.path, line, text, "An unresolved marker remains in the page.", None, None))
+            for link in LINK_RE.finditer(scan):
+                target = link.group(1).strip("/").casefold()
+                if pathlib.PurePosixPath(target).suffix in ATTACHMENT_SUFFIXES:
                     continue
-                target = link.group(1).removesuffix(".md").strip("/").casefold()
+                target = target.removesuffix(".md")
                 exists = target in qualified_names if "/" in target else target in bare_names
                 if not exists:
-                    findings.append(Finding("missing-page", page.path, line, link.group(0), f"Target “{link.group(1)}” was not found among the scanned pages.", 1.0, 1.0))
+                    findings.append(Finding("missing-page", page.path, line, link.group(0), f"Target “{link.group(1)}” was not found among the scanned pages.", None, None))
     return findings
 
 
@@ -239,10 +282,14 @@ class JevClient:
             self.cache = json.loads(cache_path.read_text())
         except (OSError, json.JSONDecodeError):
             self.cache = {}
+        if not isinstance(self.cache, dict):
+            self.cache = {}
         self.lock = threading.Lock()
+        self.context = ssl.create_default_context(cafile=certifi.where())
         self.input_tokens = 0
         self.output_tokens = 0
         self.calls = 0
+        self.dirty = False
 
     @staticmethod
     def key(state: Any, spec: dict[str, Any]) -> str:
@@ -252,15 +299,21 @@ class JevClient:
     def has(self, state: Any, spec: dict[str, Any]) -> bool:
         return self.key(state, spec) in self.cache
 
-    @staticmethod
-    def api_key() -> str:
-        if key := os.environ.get("TYPESAFE_API_KEY"):
-            return key
-        settings = pathlib.Path.home() / ".config/amp/settings.json"
-        try:
-            return json.loads(settings.read_text())["amp.mcpServers"]["jev"]["env"]["TYPESAFE_API_KEY"]
-        except (OSError, KeyError, json.JSONDecodeError) as exc:
-            raise RuntimeError("TYPESAFE_API_KEY is not set and was not found in Amp settings") from exc
+    @functools.cached_property
+    def api_key(self) -> str:
+        key = os.environ.get("TYPESAFE_API_KEY", "")
+        if not key.strip():
+            try:
+                key = str(json.loads((pathlib.Path.home() / ".config/amp/settings.json").read_text())["amp.mcpServers"]["jev"]["env"]["TYPESAFE_API_KEY"] or "")
+            except (OSError, KeyError, TypeError, json.JSONDecodeError):
+                key = ""
+        key = key.strip()
+        if not key:
+            raise RuntimeError("TYPESAFE_API_KEY is not set. Export it (keys: https://typesafe.ai) or configure it for the Jev MCP server in Amp settings")
+        if not key.isascii() or not key.isprintable() or " " in key:
+            # Never include the key: urllib would otherwise echo it in a ValueError.
+            raise RuntimeError("TYPESAFE_API_KEY contains whitespace or non-printable characters")
+        return key
 
     def ask(self, state: Any, spec: dict[str, Any]) -> dict[str, Any]:
         payload = {"state": state, "model": MODEL, "questions": {"check": spec}}
@@ -269,30 +322,71 @@ class JevClient:
             if key in self.cache:
                 return self.cache[key]
         request = urllib.request.Request(API, json.dumps(payload).encode(), {
-            "Authorization": f"Bearer {self.api_key()}", "Content-Type": "application/json"})
-        context = ssl.create_default_context(cafile=certifi.where())
+            "Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
         for attempt in range(5):
             try:
-                with urllib.request.urlopen(request, timeout=60, context=context) as response:
+                with urllib.request.urlopen(request, timeout=60, context=self.context) as response:
                     data = json.load(response)
+                answer = data["answers"]["check"]
+                answer_values(spec, answer)  # never cache an answer we cannot read
                 break
             except urllib.error.HTTPError as exc:
-                if exc.code in (429, 529) and attempt < 4:
+                if (exc.code in (429, 529) or exc.code >= 500) and attempt < 4:
                     time.sleep(2 ** attempt)
                     continue
-                raise RuntimeError(f"TypeSafe Jev returned HTTP {exc.code}") from exc
-        answer = data["answers"]["check"]
+                hint = " (check TYPESAFE_API_KEY)" if exc.code == 401 else ""
+                raise RuntimeError(f"TypeSafe Jev returned HTTP {exc.code}{hint}") from exc
+            except (urllib.error.URLError, TimeoutError) as exc:
+                raise RuntimeError(f"could not reach TypeSafe Jev: {exc.reason if isinstance(exc, urllib.error.URLError) else exc}") from exc
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                raise RuntimeError("TypeSafe Jev returned an unexpected response") from exc
         with self.lock:
-            usage = data.get("usage", {})
+            usage = data.get("usage") or {}
             self.input_tokens += int(usage.get("input_tokens", 0))
             self.output_tokens += int(usage.get("output_tokens", 0))
             self.calls += 1
             self.cache[key] = answer
-            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = self.cache_path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(self.cache, indent=2, sort_keys=True))
-            os.replace(temporary, self.cache_path)
+            self.dirty = True
         return answer
+
+    def save(self) -> None:
+        with self.lock:
+            if not self.dirty:
+                return
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write(self.cache_path, json.dumps(self.cache, sort_keys=True))
+            self.dirty = False
+
+
+def atomic_write(path: pathlib.Path, text: str) -> None:
+    """Write via a fresh exclusive temp file in the same directory, then rename over path."""
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(temporary, path)
+    except BaseException:
+        pathlib.Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def answer_values(spec: dict[str, Any], answer: Any) -> tuple[float, float | None, float | None]:
+    """(probability, score, confidence) from a Jev answer; RuntimeError if any needed field is missing or not finite."""
+    try:
+        if spec["type"] == "noul":
+            values = float(answer["noul"]), None, None if answer.get("confidence") is None else float(answer["confidence"])
+        else:
+            values = float(answer["probabilities"]["2"]), float(answer["score"]), float(answer["confidence"])
+        if not all(math.isfinite(v) for v in values if v is not None):
+            raise ValueError
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as exc:
+        raise RuntimeError("TypeSafe Jev returned an unexpected answer") from exc
+    return values
+
+
+def usd(amount: float) -> str:
+    """Dollars with enough digits that a non-zero amount never prints as $0.0000."""
+    return f"${amount:.4f}" if amount == 0 or amount >= 0.00005 else f"${amount:.6f}"
 
 
 def estimate_cost(questions: list[Question]) -> tuple[int, float]:
@@ -308,25 +402,24 @@ def estimate_cost(questions: list[Question]) -> tuple[int, float]:
 
 def score_questions(questions: list[Question], ask: Callable[[Any, dict[str, Any]], dict[str, Any]]) -> list[Finding]:
     def one(q: Question) -> Finding | None:
-        answer = ask(q.state, q.spec)
+        probability, score, confidence = answer_values(q.spec, ask(q.state, q.spec))
         if q.kind == "contradiction":
-            probability = float(answer["noul"])
             if probability < 0.65:
                 return None
-            return Finding(q.kind, q.path, q.line, q.quote, "These exact quotes crossed the contradiction threshold; verify their scope and dates.", probability, answer.get("confidence"), q.other_path, q.other_line, q.other_quote)
-        score = float(answer["score"])
-        confidence = float(answer.get("confidence", 0.0))
-        probabilities = answer.get("probabilities", {})
-        if isinstance(probabilities, dict):
-            probability = float(probabilities.get("2", 0.0))
-        else:
-            probability = float(probabilities[2]) if len(probabilities) > 2 else 0.0
+            return Finding(q.kind, q.path, q.line, q.quote, "These exact quotes crossed the contradiction threshold; verify their scope and dates.", probability, confidence, q.other_path, q.other_line, q.other_quote)
         if score < 1.5 or confidence < 0.5:
             return None
-        return Finding(q.kind, q.path, q.line, q.quote, "This exact dated claim crossed the stale threshold; verify it against a current source.", probability, confidence)
+        return Finding(q.kind, q.path, q.line, q.quote, "This exact claim crossed the stale threshold; verify it against a current source.", probability, confidence)
 
+    findings = []
+    tty = sys.stderr.isatty()
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        return [finding for finding in pool.map(one, questions) if finding]
+        for done, finding in enumerate(pool.map(one, questions), 1):
+            if finding:
+                findings.append(finding)
+            if tty and (done % 50 == 0 or done == len(questions)):
+                print(f"\r{done}/{len(questions)} questions scored", end="\n" if done == len(questions) else "", file=sys.stderr, flush=True)
+    return findings
 
 
 def report_html(result: dict[str, Any]) -> str:
@@ -364,20 +457,24 @@ def run(vault: pathlib.Path, budget: float, dry_run: bool, ask: Callable[[Any, d
     questions = build_questions(pages)
     client = None
     billable = questions
-    if ask is None and not dry_run:
+    if ask is None:
         client = JevClient(cache_path or pathlib.Path.home() / ".cache/jev-lint/responses.json")
         billable = [q for q in questions if not client.has(q.state, q.spec)]
     estimated_tokens, estimated_cost = estimate_cost(billable)
-    if estimated_cost > budget:
-        raise RuntimeError(f"Estimated Jev cost ${estimated_cost:.4f} exceeds the ${budget:.2f} budget; raise --budget to continue")
     if dry_run:
-        return {"pages": len(pages), "questions": len(questions), "estimated_tokens": estimated_tokens, "estimated_cost": estimated_cost, "dry_run": True}
+        return {"pages": len(pages), "questions": len(questions), "cached_questions": len(questions) - len(billable), "estimated_tokens": estimated_tokens, "estimated_cost": estimated_cost, "budget": budget, "dry_run": True}
+    if estimated_cost > budget:
+        raise RuntimeError(f"Estimated Jev cost {usd(estimated_cost)} exceeds the {usd(budget)} budget; raise --budget to continue")
+    if client and billable:
+        client.api_key  # fail before any scoring when no key is configured
+        print(f"jev-lint: asking Jev {len(billable)} questions ({len(questions) - len(billable)} cached), estimated {usd(estimated_cost)}", file=sys.stderr)
     findings = deterministic_findings(pages)
     if questions:
-        if ask is None:
-            assert client is not None
-            ask = client.ask
-        findings.extend(score_questions(questions, ask))
+        try:
+            findings.extend(score_questions(questions, ask or client.ask))
+        finally:
+            if client:
+                client.save()
     findings.sort(key=lambda f: (f.path, f.line, f.kind))
     result = {
         "pages": len(pages), "questions": len(questions), "findings": [asdict(f) for f in findings],
@@ -393,50 +490,78 @@ def run(vault: pathlib.Path, budget: float, dry_run: bool, ask: Callable[[Any, d
 
 
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="jev-lint", description="Find contradictions and decay in a Markdown knowledge base.")
+    p = argparse.ArgumentParser(prog="jev-lint", description="Find contradictions and decay in a Markdown knowledge base. Exit status: 0 no findings, 1 findings, 2 error.")
     p.add_argument("vault_dir", type=pathlib.Path)
-    p.add_argument("--budget", type=float, default=DEFAULT_BUDGET, metavar="USD")
+    p.add_argument("--budget", type=float, default=DEFAULT_BUDGET, metavar="USD", help="refuse the run if the estimated uncached Jev cost exceeds this (default $%(default).2f)")
     p.add_argument("--dry-run", action="store_true", help="show question count and estimated cost without calling Jev")
     p.add_argument("--json", action="store_true", help="print machine-readable JSON")
-    p.add_argument("--open", action="store_true", dest="open_report", help="open report.html after the run")
+    p.add_argument("-o", "--output", type=pathlib.Path, default=pathlib.Path("report.html"), metavar="FILE", help="where to write the HTML report (default: %(default)s)")
+    p.add_argument("--open", action="store_true", dest="open_report", help="open the report after the run")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
 
 
+def foreign(output: pathlib.Path) -> bool:
+    """True when something exists at output that jev-lint did not write."""
+    if output.is_symlink():
+        return True
+    if not output.exists():
+        return False
+    with output.open(encoding="utf-8", errors="ignore") as handle:
+        return 'name="generator" content="jev-lint"' not in handle.read(500)
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = parser().parse_args(argv)
-    vault = args.vault_dir.expanduser().resolve()
-    if not vault.is_dir():
-        print(f"jev-lint: vault directory not found: {vault}", file=sys.stderr)
-        return 2
-    if not math.isfinite(args.budget) or args.budget < 0:
-        print("jev-lint: --budget must be non-negative", file=sys.stderr)
-        return 2
     try:
-        result = run(vault, args.budget, args.dry_run)
-    except RuntimeError as exc:
+        try:
+            for stream in (sys.stdout, sys.stderr):
+                if hasattr(stream, "reconfigure"):
+                    stream.reconfigure(errors="replace")
+            return lint(parser().parse_args(argv))
+        finally:
+            sys.stdout.flush()  # surface a closed pipe here, not as an "Exception ignored" at shutdown
+    except BrokenPipeError:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 2
+    except (RuntimeError, OSError) as exc:
         print(f"jev-lint: {exc}", file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        print("jev-lint: interrupted", file=sys.stderr)
+        return 130
+
+
+def lint(args: argparse.Namespace) -> int:
+    vault = args.vault_dir.expanduser().resolve()
+    if not vault.is_dir():
+        raise RuntimeError(f"vault directory not found: {vault}")
+    if not math.isfinite(args.budget) or args.budget < 0:
+        raise RuntimeError("--budget must be non-negative")
+    output = args.output.expanduser().absolute()
+    if not args.dry_run and foreign(output):
+        raise RuntimeError(f"refusing to overwrite unrelated file: {output}")
+    result = run(vault, args.budget, args.dry_run)
+    if result["pages"] == 0:
+        raise RuntimeError(f"no Markdown pages found under {vault}")
     if args.dry_run:
+        over = result["estimated_cost"] > args.budget
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f'{result["pages"]} pages · {result["questions"]} Jev questions · estimated ${result["estimated_cost"]:.4f} ({result["estimated_tokens"]:,} input tokens)')
-        return 0
-    output = pathlib.Path.cwd() / "report.html"
-    if output.is_symlink() or (output.exists() and 'name="generator" content="jev-lint"' not in output.read_text(encoding="utf-8", errors="ignore")[:500]):
-        print(f"jev-lint: refusing to overwrite unrelated file: {output}", file=sys.stderr)
-        return 2
+            print(f'{result["pages"]} pages · {result["questions"]} Jev questions ({result["cached_questions"]} cached) · estimated {usd(result["estimated_cost"])} ({result["estimated_tokens"]:,} input tokens)' + (f' · exceeds the {usd(args.budget)} budget' if over else ""))
+        return 2 if over else 0
     rendered = report_html(result).replace("<head>", '<head><meta name="generator" content="jev-lint">', 1)
-    temporary = output.with_suffix(".tmp")
-    temporary.write_text(rendered, encoding="utf-8")
-    os.replace(temporary, output)
+    if foreign(output):  # appeared during the run
+        raise RuntimeError(f"refusing to overwrite unrelated file: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(output, rendered)
     if args.json:
         print(json.dumps(result, indent=2))
     else:
         print(f'{result["pages"]} pages · {result["questions"]} Jev questions · {len(result["findings"])} findings')
         for finding in result["findings"]:
             print(f'- {finding["kind"]}: {finding["path"]}:{finding["line"]} — {finding["why"]}')
-        print(f'{result["seconds"]:.1f}s · {result["input_tokens"]:,} input tokens · ${result["cost"]:.4f} · {output}')
+        print(f'{result["seconds"]:.1f}s · {result["input_tokens"]:,} input tokens · {usd(result["cost"])} · {output}')
     if args.open_report:
         webbrowser.open(output.as_uri())
     return 1 if result["findings"] else 0
