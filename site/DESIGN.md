@@ -143,7 +143,7 @@ simulated slow-4G font transfer), CLS 0.002, performance 96, accessibility
 - Finding card has elevation only, no hairline border (impeccable detector
   flagged the pair); its own surface tone `--card` separates it from the
   sheet.
-- Version "0.1.0" hidden from the nav under 800 px so the nav fits one line.
+- Version "0.1.1" hidden from the nav under 800 px so the nav fits one line.
 - `paper.webp` kept as the only texture; no Painter image was generated.
 - Inline SVG favicon (page with a red line) instead of a favicon.ico request.
 

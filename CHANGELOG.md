@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 (unreleased)
+## 0.1.1 (2026-09-19)
 
 Review pass after the 0.1.0 launch. See `REVIEW.md` for the findings behind each change.
 
