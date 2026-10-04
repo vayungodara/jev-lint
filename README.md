@@ -2,6 +2,8 @@
 
 Find possible contradictions, stale claims, unresolved markers, and dangling wikilinks in a Markdown knowledge base.
 
+Not related to jevlint.dev.
+
 jev-lint is built for ordinary Obsidian vaults and structured LLM wikis. It runs mechanical checks locally, sends only selected claims (plus the page title, `updated` date, and run date for staleness checks) to [TypeSafe Jev](https://typesafe.ai/) for semantic scoring, and writes a self-contained `report.html` with the exact evidence behind every flag.
 
 ## Install
